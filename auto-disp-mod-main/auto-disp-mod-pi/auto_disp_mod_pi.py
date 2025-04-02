@@ -2,6 +2,7 @@ import RPi.GPIO as GPIO
 import time
 import json
 import os
+from datetime import datetime
 
 # Set GPIO mode to BCM
 GPIO.setmode(GPIO.BCM)
@@ -82,45 +83,85 @@ def calculate_volume(container, distance):
 # Main monitoring function
 try:
     print("Automatic Dispenser Module - Liquid Level Monitoring")
-    data = {}
-    
-    for i in range(4):
-        container = f"CONT{i+1}"
-        trigger = triggers[i]
-        echo = echos[i]
-        
-        pulse_duration, distance = measure_raw_data(trigger, echo)
-        if pulse_duration is None or distance is None:
-            print(f"{container}: Measurement failed (timeout or error)")
-            data[container] = {
-                "pulse_duration_s": None,
-                "distance_cm": None,
-                "remaining_volume_ml": None
-            }
-        else:
-            volume = calculate_volume(container, distance)
-            print(f"{container}: Pulse Duration = {pulse_duration:.6f} s, Distance = {distance} cm, Remaining Volume = {volume if volume is not None else 'N/A'} mL")
-            data[container] = {
-                "pulse_duration_s": pulse_duration,
-                "distance_cm": distance,
-                "remaining_volume_ml": volume
-            }
-    
-    # Ask for file path to export data
+    readings = []  # Store all readings for JSON export
+    reading_count = 0
+    previous_volumes = {}  # To track volume changes for "Amount Used"
+
     while True:
-        file_path = input("\nWhich file path to export the data (e.g., /home/admin/data.json): ")
-        try:
-            # Ensure the directory exists
-            directory = os.path.dirname(file_path)
-            if directory and not os.path.exists(directory):
-                os.makedirs(directory)
-            with open(file_path, "w") as f:
-                json.dump(data, f, indent=4)
-            print(f"Data exported to {file_path}")
+        reading_count += 1
+        current_reading = {}
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"\nReading {reading_count} ({timestamp})")
+        
+        for i in range(4):
+            container = f"CONT{i+1}"
+            trigger = triggers[i]
+            echo = echos[i]
+            
+            pulse_duration, distance = measure_raw_data(trigger, echo)
+            if pulse_duration is None or distance is None:
+                print(f"{container}: Measurement failed (timeout or error)")
+                current_reading[container] = {
+                    "distance_cm": None,
+                    "remaining_volume_ml": None
+                }
+            else:
+                volume = calculate_volume(container, distance)
+                # Calculate Amount Used (only from second reading onward)
+                amount_used = None
+                if reading_count > 1 and container in previous_volumes and previous_volumes[container] is not None and volume is not None:
+                    amount_used = round(previous_volumes[container] - volume, 2)
+                    if amount_used < 0:
+                        amount_used = 0  # Ignore negative usage (e.g., due to noise)
+                
+                # Print the reading
+                print(f"{container}: Pulse Duration = {pulse_duration:.6f} s, Distance = {distance} cm, Remaining Volume = {volume if volume is not None else 'N/A'} mL", end="")
+                if amount_used is not None:
+                    print(f", Amount Used: {amount_used} mL")
+                else:
+                    print()  # New line if no Amount Used
+                
+                current_reading[container] = {
+                    "distance_cm": distance,
+                    "remaining_volume_ml": volume
+                }
+            
+            # Update previous volume for the next reading
+            previous_volumes[container] = volume
+        
+        readings.append({
+            "reading": reading_count,
+            "timestamp": timestamp,
+            "data": current_reading
+        })
+        
+        # Ask if the user wants to read again
+        while True:
+            choice = input("\nDo you want to read the measurements again? (Y/N): ").strip().upper()
+            if choice in ["Y", "N"]:
+                break
+            print("Please enter 'Y' or 'N'.")
+        
+        if choice == "N":
             break
-        except Exception as e:
-            print(f"Error writing to file: {e}")
-            print("Please try again or specify a different path.")
+    
+    # Export data to JSON
+    if readings:
+        while True:
+            file_path = input("\nWhich file path to export the data (e.g., /home/admin/data.json): ")
+            try:
+                directory = os.path.dirname(file_path)
+                if directory and not os.path.exists(directory):
+                    os.makedirs(directory)
+                with open(file_path, "w") as f:
+                    json.dump(readings, f, indent=4)
+                print(f"Data exported to {file_path}")
+                break
+            except Exception as e:
+                print(f"Error writing to file: {e}")
+                print("Please try again or specify a different path.")
+    else:
+        print("No readings to export.")
 
 except KeyboardInterrupt:
     print("\nMonitoring interrupted by user.")
