@@ -1,11 +1,17 @@
-import RPi.GPIO as GPIO
+import lgpio
 import time
-import json
-import os
 from datetime import datetime
+from pymongo import MongoClient
 
-# Set GPIO mode to BCM
-GPIO.setmode(GPIO.BCM)
+# MongoDB Atlas connection setup
+MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
+client = MongoClient(MONGO_URI)
+db = client['Smart_Cubicle']
+collection = db['dispenser_resource']
+
+
+GPIO_CHIP = 0
+h = lgpio.gpiochip_open(GPIO_CHIP)
 
 # Define trigger and echo pins for each ultrasonic sensor
 triggers = [7, 9, 11, 14]  # GPIO7, GPIO9, GPIO11, GPIO14
@@ -13,9 +19,9 @@ echos = [8, 10, 13, 15]    # GPIO8, GPIO10, GPIO13, GPIO15
 
 # Set up GPIO pins
 for trigger in triggers:
-    GPIO.setup(trigger, GPIO.OUT)
+    lgpio.gpio_claim_output(h, trigger)
 for echo in echos:
-    GPIO.setup(echo, GPIO.IN)
+    lgpio.gpio_claim_input(h, echo)
 
 # Calibration data (only CONT1 for now; others will be added)
 CALIBRATION_DATA = {
@@ -30,24 +36,24 @@ def measure_raw_data(trigger, echo, num_measurements=5):
     distances = []
     pulse_durations = []
     for _ in range(num_measurements):
-        GPIO.output(trigger, True)
-        time.sleep(0.00001)
-        GPIO.output(trigger, False)
+        lgpio.gpio_write(h, trigger, 1)  # Trigger high
+        time.sleep(0.00001)              # 10us pulse
+        lgpio.gpio_write(h, trigger, 0)  # Trigger low
         
         start_time = time.time()
-        while GPIO.input(echo) == 0:
+        while lgpio.gpio_read(h, echo) == 0:
             pulse_start = time.time()
             if pulse_start - start_time > 0.5:
                 return None, None
         
         start_time = time.time()
-        while GPIO.input(echo) == 1:
+        while lgpio.gpio_read(h, echo) == 1:
             pulse_end = time.time()
             if pulse_end - start_time > 0.5:
                 return None, None
         
         pulse_duration = pulse_end - pulse_start
-        distance = pulse_duration * 17150
+        distance = pulse_duration * 17150  # Speed of sound in cm/s
         distance = round(distance, 2)
         distances.append(distance)
         pulse_durations.append(pulse_duration)
@@ -62,30 +68,27 @@ def measure_raw_data(trigger, echo, num_measurements=5):
 # Function to calculate remaining volume in mL
 def calculate_volume(container, distance):
     if CALIBRATION_DATA[container]["full"] is None or CALIBRATION_DATA[container]["empty"] is None:
-        return None  # Cannot calculate without calibration data
+        return None
     
     full_distance = CALIBRATION_DATA[container]["full"]
     empty_distance = CALIBRATION_DATA[container]["empty"]
     
-    # Calculate liquid height
     liquid_height = empty_distance - distance
     if liquid_height < 0:
-        liquid_height = 0  # Below full
+        liquid_height = 0
     elif liquid_height > (empty_distance - full_distance):
-        liquid_height = empty_distance - full_distance  # Above empty
+        liquid_height = empty_distance - full_distance
     
-    # Volume per cm of height (600 mL over the full liquid height)
     total_height = empty_distance - full_distance
-    volume_per_cm = 600 / total_height  # 600 mL for the full height
+    volume_per_cm = 600 / total_height
     volume = liquid_height * volume_per_cm
     return round(volume, 2)
 
 # Main monitoring function
 try:
     print("Automatic Dispenser Module - Liquid Level Monitoring")
-    readings = []  # Store all readings for JSON export
     reading_count = 0
-    previous_volumes = {}  # To track volume changes for "Amount Used"
+    previous_volumes = {}
 
     while True:
         reading_count += 1
@@ -107,33 +110,33 @@ try:
                 }
             else:
                 volume = calculate_volume(container, distance)
-                # Calculate Amount Used (only from second reading onward)
                 amount_used = None
                 if reading_count > 1 and container in previous_volumes and previous_volumes[container] is not None and volume is not None:
                     amount_used = round(previous_volumes[container] - volume, 2)
                     if amount_used < 0:
-                        amount_used = 0  # Ignore negative usage (e.g., due to noise)
+                        amount_used = 0
                 
-                # Print the reading
                 print(f"{container}: Pulse Duration = {pulse_duration:.6f} s, Distance = {distance} cm, Remaining Volume = {volume if volume is not None else 'N/A'} mL", end="")
                 if amount_used is not None:
                     print(f", Amount Used: {amount_used} mL")
                 else:
-                    print()  # New line if no Amount Used
+                    print()
                 
                 current_reading[container] = {
                     "distance_cm": distance,
                     "remaining_volume_ml": volume
                 }
             
-            # Update previous volume for the next reading
             previous_volumes[container] = volume
         
-        readings.append({
+        # Save to MongoDB Atlas
+        reading_doc = {
             "reading": reading_count,
             "timestamp": timestamp,
             "data": current_reading
-        })
+        }
+        collection.insert_one(reading_doc)
+        print(f"Reading {reading_count} saved to MongoDB Atlas")
         
         # Ask if the user wants to read again
         while True:
@@ -144,26 +147,14 @@ try:
         
         if choice == "N":
             break
-    
-    # Export data to JSON
-    if readings:
-        while True:
-            file_path = input("\nWhich file path to export the data (e.g., /home/admin/data.json): ")
-            try:
-                directory = os.path.dirname(file_path)
-                if directory and not os.path.exists(directory):
-                    os.makedirs(directory)
-                with open(file_path, "w") as f:
-                    json.dump(readings, f, indent=4)
-                print(f"Data exported to {file_path}")
-                break
-            except Exception as e:
-                print(f"Error writing to file: {e}")
-                print("Please try again or specify a different path.")
-    else:
-        print("No readings to export.")
 
 except KeyboardInterrupt:
     print("\nMonitoring interrupted by user.")
+except Exception as e:
+    print(f"\nAn error occurred: {e}")
 finally:
-    GPIO.cleanup()
+    # Cleanup GPIO pins and close chip
+    for pin in triggers + echos:
+        lgpio.gpio_free(h, pin)
+    lgpio.gpiochip_close(h)
+    client.close()

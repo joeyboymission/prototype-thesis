@@ -130,10 +130,18 @@ def main():
     choice = input("Enter your choice (1 or 2): ")
 
     if choice == "1":
-        directory = input("Please select the file directory (e.g., /home/admin/Documents): ")
+        directory = input("Please select the file directory (e.g., /home/pi/Documents, or '.' for current directory): ")
+        # Use current directory if '.' is entered
+        if directory == '.':
+            directory = os.getcwd()
+        # Create directory if it doesn't exist
         if not os.path.isdir(directory):
-            print("Error: Directory does not exist.")
-            return
+            try:
+                os.makedirs(directory, exist_ok=True)
+                print(f"Created directory: {directory}")
+            except Exception as e:
+                print(f"Error: Could not create directory {directory}. {e}")
+                return
         file_path = os.path.join(directory, "occupancy_data.json")
         try:
             monitor_occupancy(file_path)
