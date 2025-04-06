@@ -1,10 +1,10 @@
-import RPi.GPIO as GPIO
+import RPi.LGPIO as LGPIO
 import time
 
 # GPIO setup for buzzer
 BUZZER_PIN = 27  # GPIO27 for buzzer control
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(BUZZER_PIN, GPIO.OUT)
+LGPIO.gpio_set_mode(LGPIO.BCM)
+LGPIO.gpio_setup(BUZZER_PIN, LGPIO.OUT)
 
 # Define note frequencies (in Hz, based on standard pitches.h)
 REST = 0
@@ -65,7 +65,6 @@ HES_A_PIRATE = [
     (NOTE_A4, 8), (NOTE_C5, 8), (NOTE_B4, 4), (NOTE_B4, 8), (REST, 8),
     (NOTE_C5, 8), (NOTE_A4, 8), (NOTE_B4, 4), (REST, 4),
     (NOTE_A4, 4), (NOTE_A4, 8),
-    # Repeat of first part
     (NOTE_A4, 8), (NOTE_B4, 8), (NOTE_C5, 4), (NOTE_C5, 8), (REST, 8),
     (NOTE_C5, 8), (NOTE_D5, 8), (NOTE_B4, 4), (NOTE_B4, 8), (REST, 8),
     (NOTE_A4, 8), (NOTE_G4, 8), (NOTE_A4, 4), (REST, 8),
@@ -81,7 +80,6 @@ HES_A_PIRATE = [
     (NOTE_D5, 4), (NOTE_E5, 8), (NOTE_A4, 4), (REST, 8),
     (NOTE_A4, 8), (NOTE_C5, 8), (NOTE_B4, 4), (NOTE_B4, 8), (REST, 8),
     (NOTE_C5, 8), (NOTE_A4, 8), (NOTE_B4, 4), (REST, 4),
-    # End of repeat
     (NOTE_E5, 4), (REST, 8), (REST, 4), (NOTE_F5, 4), (REST, 8), (REST, 4),
     (NOTE_E5, 8), (NOTE_E5, 8), (REST, 8), (NOTE_G5, 8), (REST, 8), (NOTE_E5, 8), (NOTE_D5, 8), (REST, 8), (REST, 4),
     (NOTE_D5, 4), (REST, 8), (REST, 4), (NOTE_C5, 4), (REST, 8), (REST, 4),
@@ -163,15 +161,21 @@ SUPER_MARIO = [
     (NOTE_G4, 8), (NOTE_D4, 8), (NOTE_E4, 2)
 ]
 
-# Function to play a note
+# Function to play a note using square wave (since PWM is different in RPi.LGPIO)
 def play_note(frequency, duration):
     if frequency == 0:  # Rest
         time.sleep(duration)
-    else:
-        p = GPIO.PWM(BUZZER_PIN, frequency)
-        p.start(50)  # 50% duty cycle
-        time.sleep(duration)
-        p.stop()
+        return
+    # Calculate period in seconds (1/frequency)
+    period = 1.0 / frequency
+    half_period = period / 2
+    # Play a square wave for the duration
+    end_time = time.time() + duration
+    while time.time() < end_time:
+        LGPIO.gpio_write(BUZZER_PIN, LGPIO.HIGH)
+        time.sleep(half_period)
+        LGPIO.gpio_write(BUZZER_PIN, LGPIO.LOW)
+        time.sleep(half_period)
 
 # Function to play a song
 def play_song(song):
@@ -219,4 +223,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        GPIO.cleanup()  # Reset GPIO pins on exit
+        LGPIO.gpio_reset()  # Reset GPIO pins on exit

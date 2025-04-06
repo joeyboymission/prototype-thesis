@@ -1,16 +1,16 @@
-import RPi.GPIO as GPIO
+import RPi.LGPIO as LGPIO
 import time
 import json
 import os
 from datetime import datetime
 
 # GPIO setup
-GPIO.setmode(GPIO.BCM)
+LGPIO.gpio_set_mode(LGPIO.BCM)
 SENSOR_PIN = 17  # GPIO17 for E18-D80NK signal
 BUZZER_PIN = 27  # GPIO27 for buzzer control
-GPIO.setup(SENSOR_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Pull-up, LOW on detection
-GPIO.setup(BUZZER_PIN, GPIO.OUT)
-GPIO.output(BUZZER_PIN, GPIO.LOW)  # Buzzer off initially
+LGPIO.gpio_setup(SENSOR_PIN, LGPIO.IN, pull_up_down=LGPIO.PUD_UP)  # Pull-up, LOW on detection
+LGPIO.gpio_setup(BUZZER_PIN, LGPIO.OUT)
+LGPIO.gpio_write(BUZZER_PIN, LGPIO.LOW)  # Buzzer off initially
 
 # Constants
 DEBOUNCE_DELAY = 1.0  # 1 second debounce
@@ -21,16 +21,16 @@ LONG_BEEP = 1.0   # 1 second long beep
 # Variables
 visitor_count = 0
 is_occupied = False
-last_sensor_state = GPIO.HIGH  # HIGH means no detection
+last_sensor_state = LGPIO.HIGH  # HIGH means no detection
 last_detection_time = 0
 log_list = []  # Store visitor entries
 current_start_time = None
 
 # Function to control buzzer
 def beep_buzzer(duration):
-    GPIO.output(BUZZER_PIN, GPIO.HIGH)
+    LGPIO.gpio_write(BUZZER_PIN, LGPIO.HIGH)
     time.sleep(duration)
-    GPIO.output(BUZZER_PIN, GPIO.LOW)
+    LGPIO.gpio_write(BUZZER_PIN, LGPIO.LOW)
 
 def double_beep():
     beep_buzzer(SHORT_BEEP)
@@ -79,14 +79,14 @@ def monitor_occupancy(file_path):
     print("Duration: null")
 
     while True:
-        current_sensor_state = GPIO.input(SENSOR_PIN)
+        current_sensor_state = LGPIO.gpio_read(SENSOR_PIN)
         current_time = time.time()
 
         # Check for state change with debounce
         if (current_sensor_state != last_sensor_state and 
             (current_time - last_detection_time) > DEBOUNCE_DELAY):
             
-            if current_sensor_state == GPIO.LOW:  # Object detected
+            if current_sensor_state == LGPIO.LOW:  # Object detected
                 if not is_occupied:
                     # Someone enters
                     is_occupied = True
@@ -156,4 +156,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        GPIO.cleanup()  # Reset GPIO pins on exit
+        LGPIO.gpio_reset()  # Reset GPIO pins on exit

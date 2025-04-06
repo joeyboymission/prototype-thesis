@@ -1,14 +1,14 @@
-import RPi.GPIO as GPIO
+import RPi.LGPIO as LGPIO
 import time
 
 # GPIO setup for proximity sensor
 SENSOR_PIN = 17  # GPIO17 for proximity sensor signal
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(SENSOR_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Pull-up, LOW on detection
+LGPIO.gpio_set_mode(LGPIO.BCM)
+LGPIO.gpio_setup(SENSOR_PIN, LGPIO.IN, pull_up_down=LGPIO.PUD_UP)  # Pull-up, LOW on detection
 
 # Variables
 detection_count = 0
-last_sensor_state = GPIO.HIGH  # HIGH means no detection
+last_sensor_state = LGPIO.HIGH  # HIGH means no detection
 
 # Function to monitor proximity sensor
 def monitor_proximity():
@@ -17,9 +17,9 @@ def monitor_proximity():
     print("Item Detected: 0", end="", flush=True)
     try:
         while True:
-            current_sensor_state = GPIO.input(SENSOR_PIN)
+            current_sensor_state = LGPIO.gpio_read(SENSOR_PIN)
             if current_sensor_state != last_sensor_state:
-                if current_sensor_state == GPIO.LOW:  # Object detected
+                if current_sensor_state == LGPIO.LOW:  # Object detected
                     detection_count += 1
                     print(f"\rItem Detected: {detection_count}", end="", flush=True)
                 last_sensor_state = current_sensor_state
@@ -47,4 +47,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        GPIO.cleanup()  # Reset GPIO pins on exit
+        LGPIO.gpio_reset()  # Reset GPIO pins on exit
