@@ -1,14 +1,18 @@
-import lgpio as LGPIO
+import lgpio
 import time
 
+# Open GPIO chip
+chip = lgpio.gpiochip_open(0)  # Open /dev/gpiochip0
+
 # GPIO setup for proximity sensor
-SENSOR_PIN = 17  # GPIO17 for proximity sensor signal
-LGPIO.gpio_set_mode(LGPIO.BCM)
-LGPIO.gpio_setup(SENSOR_PIN, LGPIO.IN, pull_up_down=LGPIO.PUD_UP)  # Pull-up, LOW on detection
+# Note: E18-D80NK operates at 5V, but Raspberry Pi GPIO is 3.3V.
+# Use a voltage divider (e.g., 2kΩ and 1kΩ resistors) to step down the 5V signal to 3.3V for GPIO17.
+SENSOR_PIN = 17  # GPIO17 for E18-D80NK signal
+lgpio.gpio_claim_input(chip, SENSOR_PIN, lgpio.SET_PULL_UP)  # Set as input with pull-up
 
 # Variables
 detection_count = 0
-last_sensor_state = LGPIO.HIGH  # HIGH means no detection
+last_sensor_state = 1  # 1 means HIGH (no detection)
 
 # Function to monitor proximity sensor
 def monitor_proximity():
@@ -17,9 +21,9 @@ def monitor_proximity():
     print("Item Detected: 0", end="", flush=True)
     try:
         while True:
-            current_sensor_state = LGPIO.gpio_read(SENSOR_PIN)
+            current_sensor_state = lgpio.gpio_read(chip, SENSOR_PIN)
             if current_sensor_state != last_sensor_state:
-                if current_sensor_state == LGPIO.LOW:  # Object detected
+                if current_sensor_state == 0:  # Object detected (LOW)
                     detection_count += 1
                     print(f"\rItem Detected: {detection_count}", end="", flush=True)
                 last_sensor_state = current_sensor_state
@@ -47,4 +51,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        LGPIO.gpio_reset()  # Reset GPIO pins on exit
+        lgpio.gpiochip_close(chip)  # Close the GPIO chip on exit

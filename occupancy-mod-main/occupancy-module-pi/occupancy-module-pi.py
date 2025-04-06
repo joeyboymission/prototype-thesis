@@ -1,16 +1,20 @@
-import lgpio as LGPIO
+import lgpio
 import time
 import json
 import os
 from datetime import datetime
 
+# Open GPIO chip
+chip = lgpio.gpiochip_open(0)  # Open /dev/gpiochip0
+
 # GPIO setup
-LGPIO.gpio_set_mode(LGPIO.BCM)
+# Note: E18-D80NK operates at 5V, but Raspberry Pi GPIO is 3.3V.
+# Use a voltage divider (e.g., 2kΩ and 1kΩ resistors) to step down the 5V signal to 3.3V for GPIO17.
 SENSOR_PIN = 17  # GPIO17 for E18-D80NK signal
 BUZZER_PIN = 27  # GPIO27 for buzzer control
-LGPIO.gpio_setup(SENSOR_PIN, LGPIO.IN, pull_up_down=LGPIO.PUD_UP)  # Pull-up, LOW on detection
-LGPIO.gpio_setup(BUZZER_PIN, LGPIO.OUT)
-LGPIO.gpio_write(BUZZER_PIN, LGPIO.LOW)  # Buzzer off initially
+lgpio.gpio_claim_input(chip, SENSOR_PIN, lgpio.SET_PULL_UP)  # Set as input with pull-up
+lgpio.gpio_claim_output(chip, BUZZER_PIN)  # Set as output
+lgpio.gpio_write(chip, BUZZER_PIN, 0)  # Buzzer off initially
 
 # Constants
 DEBOUNCE_DELAY = 1.0  # 1 second debounce
@@ -21,16 +25,16 @@ LONG_BEEP = 1.0   # 1 second long beep
 # Variables
 visitor_count = 0
 is_occupied = False
-last_sensor_state = LGPIO.HIGH  # HIGH means no detection
+last_sensor_state = 1  # 1 means HIGH (no detection)
 last_detection_time = 0
 log_list = []  # Store visitor entries
 current_start_time = None
 
 # Function to control buzzer
 def beep_buzzer(duration):
-    LGPIO.gpio_write(BUZZER_PIN, LGPIO.HIGH)
+    lgpio.gpio_write(chip, BUZZER_PIN, 1)  # HIGH
     time.sleep(duration)
-    LGPIO.gpio_write(BUZZER_PIN, LGPIO.LOW)
+    lgpio.gpio_write(chip, BUZZER_PIN, 0)  # LOW
 
 def double_beep():
     beep_buzzer(SHORT_BEEP)
@@ -79,14 +83,14 @@ def monitor_occupancy(file_path):
     print("Duration: null")
 
     while True:
-        current_sensor_state = LGPIO.gpio_read(SENSOR_PIN)
+        current_sensor_state = lgpio.gpio_read(chip, SENSOR_PIN)
         current_time = time.time()
 
         # Check for state change with debounce
-        if (current_sensor_state != last_sensor_state and
+        if (current_sensor_state != last_sensor_state and 
             (current_time - last_detection_time) > DEBOUNCE_DELAY):
-
-            if current_sensor_state == LGPIO.LOW:  # Object detected
+            
+            if current_sensor_state == 0:  # Object detected (LOW)
                 if not is_occupied:
                     # Someone enters
                     is_occupied = True
@@ -96,7 +100,7 @@ def monitor_occupancy(file_path):
                     print("Presence: Occupied")
                     double_beep()  # Two short beeps
                     update_log(file_path)  # Update JSON for real-time status
-            else:  # No object detected
+            else:  # No object detected (HIGH)
                 if is_occupied:
                     # Someone leaves
                     is_occupied = False
@@ -156,4 +160,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        LGPIO.gpio_reset()  # Reset GPIO pins on exit
+        lgpio.gpiochip_close(chip)  # Close the GPIO chip on exit

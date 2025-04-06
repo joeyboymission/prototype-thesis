@@ -1,10 +1,12 @@
-import lgpio as LGPIO
+import lgpio
 import time
+
+# Open GPIO chip
+chip = lgpio.gpiochip_open(0)  # Open /dev/gpiochip0
 
 # GPIO setup for buzzer
 BUZZER_PIN = 27  # GPIO27 for buzzer control
-LGPIO.gpio_set_mode(LGPIO.BCM)
-LGPIO.gpio_setup(BUZZER_PIN, LGPIO.OUT)
+lgpio.gpio_claim_output(chip, BUZZER_PIN)  # Set as output
 
 # Define note frequencies (in Hz, based on standard pitches.h)
 REST = 0
@@ -141,27 +143,13 @@ SUPER_MARIO = [
     (NOTE_A4, 8), (NOTE_F5, 8), (NOTE_F5, 8), (NOTE_A4, 2),
     (NOTE_B4, 8), (NOTE_F5, 8), (NOTE_F5, 8), (NOTE_F5, 8), (NOTE_E5, 8), (NOTE_D5, 8),
     (NOTE_C5, 8), (NOTE_E4, 8), (NOTE_E4, 8), (NOTE_C4, 2),
-    (NOTE_C5, 8), (NOTE_C5, 8), (NOTE_C5, 4), (REST, 8), (NOTE_C5, 8), (NOTE_D5, 8), (NOTE_E5, 8),
-    (REST, 1),
-    (NOTE_C5, 8), (NOTE_C5, 8), (NOTE_C5, 4), (REST, 8), (NOTE_C5, 8), (NOTE_D5, 8),
-    (NOTE_E5, 8), (NOTE_C5, 8), (NOTE_A4, 8), (NOTE_G4, 2),
-    (NOTE_E5, 8), (NOTE_E5, 8), (REST, 8), (NOTE_E5, 8), (REST, 8), (NOTE_C5, 8), (NOTE_E5, 8),
-    (NOTE_G5, 4), (REST, 4), (NOTE_G4, 8), (REST, 4),
-    (NOTE_E5, 8), (NOTE_C5, 8), (NOTE_G4, 4), (REST, 4), (NOTE_GS4, 4),
-    (NOTE_A4, 8), (NOTE_F5, 8), (NOTE_F5, 8), (NOTE_A4, 2),
-    (NOTE_D5, 8), (NOTE_A5, 8), (NOTE_A5, 8), (NOTE_A5, 8), (NOTE_G5, 8), (NOTE_F5, 8),
-    (NOTE_E5, 8), (NOTE_C5, 8), (NOTE_A4, 8), (NOTE_G4, 2),
-    (NOTE_E5, 8), (NOTE_C5, 8), (NOTE_G4, 4), (REST, 4), (NOTE_GS4, 4),
-    (NOTE_A4, 8), (NOTE_F5, 8), (NOTE_F5, 8), (NOTE_A4, 2),
-    (NOTE_B4, 8), (NOTE_F5, 8), (NOTE_F5, 8), (NOTE_F5, 8), (NOTE_E5, 8), (NOTE_D5, 8),
-    (NOTE_C5, 8), (NOTE_E4, 8), (NOTE_E4, 8), (NOTE_C4, 2),
     # Game over sound
     (NOTE_C5, 4), (NOTE_G4, 4), (NOTE_E4, 4),
     (NOTE_A4, 8), (NOTE_B4, 8), (NOTE_A4, 8), (NOTE_GS4, 8), (NOTE_AS4, 8), (NOTE_GS4, 8),
     (NOTE_G4, 8), (NOTE_D4, 8), (NOTE_E4, 2)
 ]
 
-# Function to play a note using square wave (since PWM is different in RPi.LGPIO)
+# Function to play a note using square wave (since PWM is not directly supported in lgpio)
 def play_note(frequency, duration):
     if frequency == 0:  # Rest
         time.sleep(duration)
@@ -172,9 +160,9 @@ def play_note(frequency, duration):
     # Play a square wave for the duration
     end_time = time.time() + duration
     while time.time() < end_time:
-        LGPIO.gpio_write(BUZZER_PIN, LGPIO.HIGH)
+        lgpio.gpio_write(chip, BUZZER_PIN, 1)  # HIGH
         time.sleep(half_period)
-        LGPIO.gpio_write(BUZZER_PIN, LGPIO.LOW)
+        lgpio.gpio_write(chip, BUZZER_PIN, 0)  # LOW
         time.sleep(half_period)
 
 # Function to play a song
@@ -223,4 +211,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        LGPIO.gpio_reset()  # Reset GPIO pins on exit
+        lgpio.gpiochip_close(chip)  # Close the GPIO chip on exit
