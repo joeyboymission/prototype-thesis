@@ -1,4 +1,4 @@
-import RPi.LGPIO as LGPIO
+import lgpio as LGPIO
 import time
 import json
 import os
@@ -83,9 +83,9 @@ def monitor_occupancy(file_path):
         current_time = time.time()
 
         # Check for state change with debounce
-        if (current_sensor_state != last_sensor_state and 
+        if (current_sensor_state != last_sensor_state and
             (current_time - last_detection_time) > DEBOUNCE_DELAY):
-            
+
             if current_sensor_state == LGPIO.LOW:  # Object detected
                 if not is_occupied:
                     # Someone enters

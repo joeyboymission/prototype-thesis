@@ -1,4 +1,4 @@
-import RPi.LGPIO as LGPIO
+import lgpio as LGPIO
 import time
 
 # GPIO setup for buzzer
