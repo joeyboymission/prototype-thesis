@@ -1,8 +1,9 @@
-import RPi.GPIO as GPIO
+import lgpio
 import time
 
-# Set GPIO mode to BCM
-GPIO.setmode(GPIO.BCM)
+# GPIO setup using lgpio
+GPIO_CHIP = 0
+h = lgpio.gpiochip_open(GPIO_CHIP)
 
 # Define trigger and echo pins for each ultrasonic sensor
 triggers = [7, 9, 11, 14]  # GPIO7, GPIO9, GPIO11, GPIO14
@@ -10,26 +11,26 @@ echos = [8, 10, 13, 15]    # GPIO8, GPIO10, GPIO13, GPIO15
 
 # Set up GPIO pins
 for trigger in triggers:
-    GPIO.setup(trigger, GPIO.OUT)
+    lgpio.gpio_claim_output(h, trigger)
 for echo in echos:
-    GPIO.setup(echo, GPIO.IN)
+    lgpio.gpio_claim_input(h, echo)
 
 # Function to measure distance using ultrasonic sensor
 def measure_distance(trigger, echo, num_measurements=5):
     distances = []
     for _ in range(num_measurements):
-        GPIO.output(trigger, True)
-        time.sleep(0.00001)
-        GPIO.output(trigger, False)
+        lgpio.gpio_write(h, trigger, 1)  # Trigger high
+        time.sleep(0.00001)              # 10us pulse
+        lgpio.gpio_write(h, trigger, 0)  # Trigger low
         
         start_time = time.time()
-        while GPIO.input(echo) == 0:
+        while lgpio.gpio_read(h, echo) == 0:
             pulse_start = time.time()
             if pulse_start - start_time > 0.5:
                 return None
         
         start_time = time.time()
-        while GPIO.input(echo) == 1:
+        while lgpio.gpio_read(h, echo) == 1:
             pulse_end = time.time()
             if pulse_end - start_time > 0.5:
                 return None
@@ -137,5 +138,10 @@ try:
         print("No containers calibrated.")
 except KeyboardInterrupt:
     print("\nCalibration interrupted by user.")
+except Exception as e:
+    print(f"\nAn error occurred: {e}")
 finally:
-    GPIO.cleanup()
+    # Cleanup GPIO pins and close chip
+    for pin in triggers + echos:
+        lgpio.gpio_free(h, pin)
+    lgpio.gpiochip_close(h)
