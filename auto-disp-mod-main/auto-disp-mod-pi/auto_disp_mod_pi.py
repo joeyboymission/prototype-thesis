@@ -26,9 +26,9 @@ for echo in echos:
 # Calibration data (only CONT1 for now; others will be added)
 CALIBRATION_DATA = {
     "CONT1": {"full": 2.84, "empty": 12.67},
-    "CONT2": {"full": None, "empty": None},
-    "CONT3": {"full": None, "empty": None},
-    "CONT4": {"full": None, "empty": None}
+    "CONT2": {"full": 2.37, "empty": 12.21},
+    "CONT3": {"full": 2.23, "empty": 12.33},
+    "CONT4": {"full": 2.91, "empty": 12.88}
 }
 
 # Function to measure raw data and distance

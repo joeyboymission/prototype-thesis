@@ -1,20 +1,31 @@
 import time
-import json
 import board
 import busio
 import adafruit_dht
-import adafruit_ads1x15.ads1115 as ADS
-from adafruit_ads1x15.analog_in import AnalogIn
-import RPi.GPIO as GPIO
+import smbus
+import lgpio
+from pymongo import MongoClient
 
-# GPIO Setup
-GPIO.setmode(GPIO.BCM)
+# MongoDB Atlas connection setup
+MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
+client = MongoClient(MONGO_URI)
+db = client['Smart_Cubicle']
+collection = db['dispenser_resource']
+
+# GPIO setup using lgpio
+GPIO_CHIP = 0
+h = lgpio.gpiochip_open(GPIO_CHIP)
+
 FAN_RELAY_PIN = 23  # 8RELAY-B K2 for exhaust fan
 FRESHENER_RELAY_PIN = 22  # 8RELAY-A K1 for air freshener
-GPIO.setup(FAN_RELAY_PIN, GPIO.OUT)
-GPIO.setup(FRESHENER_RELAY_PIN, GPIO.OUT)
-GPIO.output(FAN_RELAY_PIN, GPIO.LOW)  # Fan off initially
-GPIO.output(FRESHENER_RELAY_PIN, GPIO.LOW)  # Freshener off initially
+SENSOR_PIN = 17  # Occupancy sensor (E18-D80NK)
+
+# Configure GPIO pins
+lgpio.gpio_claim_output(h, FAN_RELAY_PIN)
+lgpio.gpio_claim_output(h, FRESHENER_RELAY_PIN)
+lgpio.gpio_claim_input(h, SENSOR_PIN, pull=lgpio.PUD_UP)  # Pull-up for occupancy sensor
+lgpio.gpio_write(h, FAN_RELAY_PIN, 0)  # Fan off initially
+lgpio.gpio_write(h, FRESHENER_RELAY_PIN, 0)  # Freshener off initially
 
 # DHT22 Setup
 dht_devices = [
@@ -24,22 +35,20 @@ dht_devices = [
     adafruit_dht.DHT22(board.D12)  # GPIO12
 ]
 
-# ADS1115 Setup (I2C on GPIO2 SDA, GPIO3 SCL)
-i2c = busio.I2C(board.SCL, board.SDA)
-ads = ADS.ADS1115(i2c)
-channels = [AnalogIn(ads, ADS.P0), AnalogIn(ads, ADS.P1),
-           AnalogIn(ads, ADS.P2), AnalogIn(ads, ADS.P3)]  # GAS1-GAS4
+# I2C Setup for Arduino Mega (MQ135 readings)
+bus = smbus.SMBus(1)  # I2C bus 1 on Pi
+ARDUINO_ADDRESS = 8
 
-# Occupancy integration (simplified for this module)
-SENSOR_PIN = 17  # From Occupancy Module
-GPIO.setup(SENSOR_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-is_occupied = False
-last_sensor_state = GPIO.HIGH
 
+# Global variables
 fan_status = False
 freshener_triggered = False
+is_occupied = False
+last_sensor_state = 1  # 1 = HIGH (no detection) with pull-up
+last_time = time.time()
 
 def read_sensors():
+    """Read temperature, humidity from DHT22 and AQI from Arduino Mega."""
     temp = [0] * 4
     hum = [0] * 4
     aqi = [0] * 4
@@ -49,48 +58,59 @@ def read_sensors():
             hum[i] = dht.humidity
         except RuntimeError:
             temp[i], hum[i] = 0, 0
-    for i, chan in enumerate(channels):
-        aqi[i] = (chan.value / 32767) * 500  # Map 0-5V to 0-500 AQI
+    try:
+        # Read 8 bytes from Mega (4x 2-byte AQI values)
+        data = bus.read_i2c_block_data(ARDUINO_ADDRESS, 0, 8)
+        for i in range(4):
+            aqi[i] = (data[i*2] << 8) + data[i*2 + 1]  # Combine MSB and LSB (0-500)
+    except Exception as e:
+        print(f"Error reading I2C from Mega: {e}")
+        aqi = [0] * 4  # Default to 0 on error
     return temp, hum, aqi
 
 def calculate_avg_aqi(aqi):
+    """Calculate average AQI from sensor readings."""
     return sum(aqi) / len(aqi)
 
 def check_occupancy():
+    """Check occupancy status using E18-D80NK sensor."""
     global is_occupied, last_sensor_state
-    current_sensor_state = GPIO.input(SENSOR_PIN)
+    current_sensor_state = lgpio.gpio_read(h, SENSOR_PIN)
     if current_sensor_state != last_sensor_state and time.time() - last_time > 1.0:
-        if current_sensor_state == GPIO.LOW:  # Occupied
+        if current_sensor_state == 0:  # LOW = Occupied
             is_occupied = True
-        else:  # Vacant
+        else:  # HIGH = Vacant
             is_occupied = False
         last_sensor_state = current_sensor_state
         return not is_occupied  # True if just vacated
     return False
 
 def control_fan(avg_aqi):
+    """Control exhaust fan based on AQI."""
     global fan_status
     if avg_aqi > 200 and not fan_status:
-        GPIO.output(FAN_RELAY_PIN, GPIO.HIGH)
+        lgpio.gpio_write(h, FAN_RELAY_PIN, 1)  # HIGH to activate relay
         fan_status = True
         print("Fan ON")
     elif avg_aqi <= 200 and fan_status:
-        GPIO.output(FAN_RELAY_PIN, GPIO.LOW)
+        lgpio.gpio_write(h, FAN_RELAY_PIN, 0)  # LOW to deactivate
         fan_status = False
         print("Fan OFF")
 
 def control_freshener(avg_aqi, vacated):
+    """Control air freshener based on AQI or occupancy."""
     global freshener_triggered
-    if (avg_aqi > 300 or vacated) and not freshener_triggered:  # Very Poor AQI or just vacated
-        GPIO.output(FRESHENER_RELAY_PIN, GPIO.HIGH)
-        time.sleep(0.5)  # Simulate button press for 500ms
-        GPIO.output(FRESHENER_RELAY_PIN, GPIO.LOW)
+    if (avg_aqi > 300 or vacated) and not freshener_triggered:
+        lgpio.gpio_write(h, FRESHENER_RELAY_PIN, 1)  # HIGH to activate relay
+        time.sleep(0.5)  # 500ms pulse to simulate button press
+        lgpio.gpio_write(h, FRESHENER_RELAY_PIN, 0)  # LOW to deactivate
         freshener_triggered = True
         print("Air Freshener Triggered")
     elif avg_aqi <= 300 and not vacated:
         freshener_triggered = False
 
 def log_data(temp, hum, aqi):
+    """Log sensor data to MongoDB."""
     data = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "sensors": {
@@ -107,10 +127,12 @@ def log_data(temp, hum, aqi):
         "freshener_status": "triggered" if freshener_triggered else "off",
         "occupancy_status": "occupied" if is_occupied else "vacant"
     }
-    with open("/home/pi/odor_data.json", "w") as f:
-        json.dump(data, f, indent=4)
+    try:
+        collection.insert_one(data)
+        print("Data logged to MongoDB")
+    except Exception as e:
+        print(f"Error logging to MongoDB: {e}")
 
-last_time = time.time()
 try:
     while True:
         temp, hum, aqi = read_sensors()
@@ -125,6 +147,8 @@ try:
 
 except KeyboardInterrupt:
     print("Shutting down...")
-    GPIO.cleanup()
+finally:
+    lgpio.gpiochip_close(h)
     for dht in dht_devices:
         dht.exit()
+    client.close()  # Close MongoDB connection
