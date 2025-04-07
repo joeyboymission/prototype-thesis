@@ -9,7 +9,7 @@ client = MongoClient(MONGO_URI)
 db = client['Smart_Cubicle']
 collection = db['dispenser_resource']
 
-
+# GPIO setup using lgpio
 GPIO_CHIP = 0
 h = lgpio.gpiochip_open(GPIO_CHIP)
 
@@ -65,24 +65,25 @@ def measure_raw_data(trigger, echo, num_measurements=5):
         return avg_pulse_duration, avg_distance
     return None, None
 
-# Function to calculate remaining volume in mL
-def calculate_volume(container, distance):
+# Function to calculate usable volume in mL
+def calculate_usable_volume(container, distance):
     if CALIBRATION_DATA[container]["full"] is None or CALIBRATION_DATA[container]["empty"] is None:
-        return None
+        return None  # Cannot calculate without calibration data
     
     full_distance = CALIBRATION_DATA[container]["full"]
     empty_distance = CALIBRATION_DATA[container]["empty"]
     
-    liquid_height = empty_distance - distance
-    if liquid_height < 0:
-        liquid_height = 0
-    elif liquid_height > (empty_distance - full_distance):
-        liquid_height = empty_distance - full_distance
-    
-    total_height = empty_distance - full_distance
-    volume_per_cm = 600 / total_height
-    volume = liquid_height * volume_per_cm
-    return round(volume, 2)
+    if distance <= full_distance:
+        return 425.0  # Full usable volume
+    elif distance >= empty_distance:
+        return 0.0  # Empty usable volume
+    else:
+        # Linear interpolation for usable volume
+        total_distance_range = empty_distance - full_distance
+        distance_from_full = distance - full_distance
+        volume_fraction = 1 - (distance_from_full / total_distance_range)
+        usable_volume = 425.0 * volume_fraction
+        return round(usable_volume, 2)
 
 # Main monitoring function
 try:
@@ -109,7 +110,7 @@ try:
                     "remaining_volume_ml": None
                 }
             else:
-                volume = calculate_volume(container, distance)
+                volume = calculate_usable_volume(container, distance)
                 amount_used = None
                 if reading_count > 1 and container in previous_volumes and previous_volumes[container] is not None and volume is not None:
                     amount_used = round(previous_volumes[container] - volume, 2)
