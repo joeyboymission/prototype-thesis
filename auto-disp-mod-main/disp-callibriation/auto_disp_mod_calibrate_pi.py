@@ -15,7 +15,7 @@ for trigger in triggers:
 for echo in echos:
     lgpio.gpio_claim_input(h, echo)
 
-# Function to measure distance using ultrasonic sensor
+# Function to measure distance for a single sensor
 def measure_distance(trigger, echo, num_measurements=5):
     distances = []
     for _ in range(num_measurements):
@@ -45,7 +45,7 @@ def measure_distance(trigger, echo, num_measurements=5):
         return sum(distances) / len(distances)
     return None
 
-# Function to calibrate a single container with 3 runs
+# Function to calibrate a single container with 3 runs (used for individual calibration)
 def calibrate_container(container_name, trigger, echo):
     print(f"\nCalibrating {container_name}...")
     full_distances = []
@@ -83,6 +83,61 @@ def calibrate_container(container_name, trigger, echo):
     print(f"Empty Distance (avg of 3 runs): {avg_empty} cm")
     return {"full": avg_full, "empty": avg_empty}
 
+# Function to calibrate all containers simultaneously
+def calibrate_all_containers():
+    print("\nCalibrating ALL...")
+    # Store distances for each run
+    all_full_distances = {f"CONT{i+1}": [] for i in range(4)}
+    all_empty_distances = {f"CONT{i+1}": [] for i in range(4)}
+    
+    for run in range(1, 4):
+        print(f"\n{run}{'st' if run == 1 else 'nd' if run == 2 else 'rd'} CALIBRATION")
+        print("Calibrating CONT1, CONT2, CONT3, and CONT4...")
+        
+        # Measure full distances for all containers
+        input("Set ALL CONT to FULL (500 mL physical, 425 mL usable) and press Enter: ")
+        for i in range(4):
+            container = f"CONT{i+1}"
+            trigger = triggers[i]
+            echo = echos[i]
+            full_distance = measure_distance(trigger, echo)
+            if full_distance is None:
+                print(f"Failed to measure full distance for {container} on run {run}.")
+                return None
+            print(f"{container} Full Distance: {full_distance} cm")
+            all_full_distances[container].append(full_distance)
+        
+        # Measure empty distances for all containers
+        input("Set ALL CONT to EMPTY (75 mL physical, 0 mL usable) and press Enter: ")
+        for i in range(4):
+            container = f"CONT{i+1}"
+            trigger = triggers[i]
+            echo = echos[i]
+            empty_distance = measure_distance(trigger, echo)
+            if empty_distance is None:
+                print(f"Failed to measure empty distance for {container} on run {run}.")
+                return None
+            print(f"{container} Empty Distance: {empty_distance} cm")
+            all_empty_distances[container].append(empty_distance)
+    
+    # Calculate averages for each container
+    calibration_data = {}
+    for i in range(4):
+        container = f"CONT{i+1}"
+        avg_full = round(sum(all_full_distances[container]) / len(all_full_distances[container]), 2)
+        avg_empty = round(sum(all_empty_distances[container]) / len(all_empty_distances[container]), 2)
+        
+        if avg_empty <= avg_full:
+            print(f"Error: Average empty distance ({avg_empty} cm) should be greater than average full distance ({avg_full} cm) for {container}.")
+            return None
+        
+        print(f"\n{container} Average Results:")
+        print(f"Full Distance (avg of 3 runs): {avg_full} cm")
+        print(f"Empty Distance (avg of 3 runs): {avg_empty} cm")
+        calibration_data[container] = {"full": avg_full, "empty": avg_empty}
+    
+    return calibration_data
+
 # Main calibration loop
 try:
     calibration_data = {}
@@ -99,16 +154,12 @@ try:
         if choice == "6":
             break
         elif choice == "5":
-            # Calibrate all containers sequentially
-            for i in range(4):
-                container = f"CONT{i+1}"
-                trigger = triggers[i]
-                echo = echos[i]
-                data = calibrate_container(container, trigger, echo)
-                if data:
-                    calibration_data[container] = data
-                else:
-                    print(f"Calibration failed for {container}. Retry if needed.")
+            # Calibrate all containers simultaneously
+            data = calibrate_all_containers()
+            if data:
+                calibration_data.update(data)
+            else:
+                print("Calibration failed for one or more containers. Retry if needed.")
         elif choice in ["1", "2", "3", "4"]:
             container_index = int(choice) - 1
             container = f"CONT{container_index + 1}"
