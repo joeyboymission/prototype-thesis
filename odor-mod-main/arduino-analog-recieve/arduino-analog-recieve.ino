@@ -1,7 +1,7 @@
 #include <Wire.h>
 
-#define I2C_ADDRESS 8  // I2C slave address
-#define SENSOR_PINS {A0, A1, A2, A3}  // MQ135 sensors on A0-A3
+#define I2C_ADDRESS 8  # I2C slave address
+#define SENSOR_PINS {A0, A1, A2, A3}  # MQ135 sensors on A0-A3
 #define NUM_SENSORS 4
 
 // Calibration constants (adjust based on mq135-test.py results)
@@ -64,10 +64,10 @@ void loop() {
 void requestEvent() {
   uint8_t buffer[8];
   for (int i = 0; i < NUM_SENSORS; i++) {
-    buffer[i*2] = (aqiValues[i] >> 8) & 0xFF;  // MSB
-    buffer[i*2 + 1] = aqiValues[i] & 0xFF;     // LSB
+    buffer[i*2] = (aqiValues[i] >> 8) & 0xFF;  # MSB
+    buffer[i*2 + 1] = aqiValues[i] & 0xFF;     # LSB
   }
-  Wire.write(buffer, 8);  // Send 8 bytes to Pi
+  Wire.write(buffer, 8);  # Send 8 bytes to Pi
 }
 
 // Helper function to map float values

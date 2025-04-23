@@ -2,6 +2,15 @@ import smbus
 import time
 import lgpio
 
+# Prerequisites:
+# 1. Install dependencies from requirements.txt:
+#    Run `sudo pip3 install -r requirements.txt` to install smbus (included in adafruit-blinka).
+# 2. Install lgpio library:
+#    Run `sudo apt install python3-lgpio` for RPi-LGPIO.
+# 3. Connect hardware:
+#    - I2C: Arduino Mega A4 (SDA) to GPIO2 (Pin 3), A5 (SCL) to GPIO3 (Pin 5).
+#    - MQ135 sensors: A0-A3 on Arduino Mega.
+
 # GPIO setup using lgpio
 GPIO_CHIP = 0
 h = lgpio.gpiochip_open(GPIO_CHIP)

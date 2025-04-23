@@ -3,6 +3,14 @@ import lgpio
 import adafruit_dht
 import board
 
+# Prerequisites:
+# 1. Install dependencies from requirements.txt:
+#    Run `sudo pip3 install -r requirements.txt` to install adafruit-circuitpython-dht, adafruit-blinka.
+# 2. Install lgpio library:
+#    Run `sudo apt install python3-lgpio` for RPi-LGPIO.
+# 3. Connect hardware:
+#    - DHT22 sensors: GPIO4 (Pin 7), GPIO5 (Pin 29), GPIO6 (Pin 31), GPIO12 (Pin 32) with 10kΩ pull-up resistors.
+
 # GPIO setup using lgpio
 GPIO_CHIP = 0
 h = lgpio.gpiochip_open(GPIO_CHIP)
