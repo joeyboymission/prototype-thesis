@@ -1,0 +1,74 @@
+{
+    "smart_cubicle": {
+        "timestamp": "2023-10-01T12:00:00Z",
+        "reading_id": "smart_cubicle_123456abcdef",
+        "data": {
+            "occupancy_module": {
+                "visitors": [
+                    {
+                        "visitor_id": "vis12a3b4c5d6",
+                        "starting_time": "2023-10-01T08:00:00Z",
+                        "ending_time": "2023-10-01T09:00:00Z",
+                        "duration": 300
+                    },
+                    {
+                        "visitor_id": 2,
+                        "starting_time": "2023-10-01T09:15:00Z",
+                        "ending_time": "2023-10-01T09:45:00Z",
+                        "duration": 180
+                    },
+                    {
+                        "visitor_id": 3,
+                        "starting_time": "2023-10-01T10:00:00Z",
+                        "ending_time": "2023-10-01T10:30:00Z",
+                        "duration": 120
+                    }
+                ],
+                "summary": {
+                    "total_visitors": 3,
+                    "average_duration": 300,
+                    "peak_time": "2023-10-01T08:30:00Z",
+                    "occupancy_rate": 0.5
+                }
+            },
+            "odor_module": {
+                "visitors" : [
+                    {
+                        "visitor_id": "odor12a3b4c5d6",
+                        "starting_time": "2023-10-01T08:00:00Z",
+                        "ending_time": "2023-10-01T09:00:00Z",
+                        "temp_before" : 22.5,
+                        "temp_after" : 23.0,
+                        "humidity_before" : 45.0,
+                        "humidity_after" : 50.0,
+                        "odor_level": 0.8
+                    },
+                    {
+                        "visitor_id": 2,
+                        "starting_time": "2023-10-01T09:15:00Z",
+                        "ending_time": "2023-10-01T09:45:00Z",
+                        "temp_before" : 22.0,
+                        "temp_after" : 22.5,
+                        "humidity_before" : 40.0,
+                        "humidity_after" : 45.0,
+                        "odor_level": 0.6
+                    },
+                    {
+                        "visitor_id": 3,
+                        "starting_time": "2023-10-01T10:00:00Z",
+                        "ending_time": "2023-10-01T10:30:00Z",
+                        "temp_before" : 21.5,
+                        "temp_after" : 22.0,
+                        "humidity_before" : 35.0,
+                        "humidity_after" : 40.0,
+                        "odor_level": 0.7
+                    }
+                ],
+                "summary": {
+
+                }
+            },
+            "dispenser_module": {}
+        }
+    }
+}
