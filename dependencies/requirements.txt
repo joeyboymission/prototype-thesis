@@ -16,6 +16,9 @@ RPi-LGPIO>=0.6.0
 # I2C Communication
 smbus2>=0.5.0
 
+# Serial Communication
+pyserial>=3.5
+
 # Date/Time Libraries 
 pytz>=2025.2
 python-dateutil>=2.9.0
