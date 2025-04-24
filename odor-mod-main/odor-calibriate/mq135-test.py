@@ -1,10 +1,10 @@
-import smbus
+import smbus2 as smbus
 import time
 import lgpio
 
 # Prerequisites:
 # 1. Install dependencies from requirements.txt:
-#    Run `sudo pip3 install -r requirements.txt` to install smbus (included in adafruit-blinka).
+#    Run `sudo pip3 install -r requirements.txt` to install smbus2.
 # 2. Install lgpio library:
 #    Run `sudo apt install python3-lgpio` for RPi-LGPIO.
 # 3. Connect hardware:
