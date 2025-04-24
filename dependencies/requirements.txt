@@ -1,29 +1,26 @@
 # ===========================================
 # Database Dependencies
 # ===========================================
-pymongo
+pymongo>=4.12.0
 
 # ===========================================
 # Hardware Interface Dependencies
 # ===========================================
 # DHT Sensor Libraries
-adafruit-circuitpython-dht
+adafruit-circuitpython-dht>=4.0.7
 adafruit-blinka>=8.32.0
 
 # GPIO Libraries
-RPi-LGPIO
+RPi-LGPIO>=0.6.0
 
 # I2C Communication
-smbus2
+smbus2>=0.5.0
 
 # Date/Time Libraries 
-pytz
-python-dateutil
-
-# Logging and Error Handling
-logging
+pytz>=2025.2
+python-dateutil>=2.9.0
 
 # Development Tools
-pytest  # For testing
-pylint  # For code quality
-black   # For code formatting
+pytest>=7.0.0  # For testing
+pylint>=3.0.0  # For code quality
+black>=24.0.0  # For code formatting
