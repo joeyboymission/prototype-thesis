@@ -19,7 +19,7 @@ void setup() {
   Wire.begin(I2C_ADDRESS);
   Wire.onRequest(requestEvent);  // Register I2C request handler
   
-  // Initialize serial for debugging (optional)
+  // Initialize serial for debugging
   Serial.begin(9600);
   
   // Set sensor pins as input
@@ -48,7 +48,7 @@ void loop() {
     aqiValues[i] = (uint16_t)aqi;  // Store as 16-bit integer
   }
   
-  // Optional: Print AQI values for debugging
+  // Print AQI values for debugging
   Serial.print("AQI: ");
   for (int i = 0; i < NUM_SENSORS; i++) {
     Serial.print(aqiValues[i]);
@@ -56,17 +56,19 @@ void loop() {
   }
   Serial.println();
   
-  delay(100);  // Update every 100ms
+  delay(200);  // Update every 200ms to reduce load
 }
 
 // I2C request handler: Send 8 bytes (4 sensors x 2 bytes)
 void requestEvent() {
+  Serial.println("I2C request received");
   uint8_t buffer[8];
   for (int i = 0; i < NUM_SENSORS; i++) {
     buffer[i*2] = (aqiValues[i] >> 8) & 0xFF;  // MSB
     buffer[i*2 + 1] = aqiValues[i] & 0xFF;     // LSB
   }
   Wire.write(buffer, 8);  // Send 8 bytes to Pi
+  Serial.println("Sent 8 bytes");
 }
 
 // Helper function to map float values
