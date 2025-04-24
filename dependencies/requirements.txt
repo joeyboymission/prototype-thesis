@@ -12,3 +12,18 @@ adafruit-blinka>=8.32.0
 
 # GPIO Libraries
 RPi-LGPIO
+
+# I2C Communication
+smbus2
+
+# Date/Time Libraries 
+pytz
+python-dateutil
+
+# Logging and Error Handling
+logging
+
+# Development Tools
+pytest  # For testing
+pylint  # For code quality
+black   # For code formatting
