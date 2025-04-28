@@ -138,7 +138,7 @@ class CentralHub:
 class SmartRestroomGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Smart Restroom System")
+        self.root.title("Smart Restroom System: Developer Contol Panel")
         self.root.geometry("1200x800")
         self.root.resizable(False, False)  # Disable window resizing
         
@@ -477,11 +477,13 @@ class SmartRestroomGUI:
                 percent = int((container_data["volume"] / 425) * 100)
                 percentage.config(text=f"{percent}%")
                 
-                # Clear and redraw volume bar with rounded corners
+                # Get color based on percentage
+                color = self.get_volume_color(percent)
+                
+                # Clear and redraw volume bar with rounded corners and dynamic color
                 canvas.delete("all")
                 height = (container_data["volume"] / 425) * 90
-                # Replace the create_rectangle with our rounded rectangle function
-                self.rounded_rectangle(canvas, 10, 100-height, 40, 100, radius=5, fill="blue", outline="")
+                self.rounded_rectangle(canvas, 10, 100-height, 40, 100, radius=5, fill=color, outline="")
                 
                 info.config(
                     text=f"Status: {'UP' if container_data['online'] else 'DOWN'}\n" +
@@ -492,6 +494,36 @@ class SmartRestroomGUI:
 
         # Schedule next update
         self.root.after(500, self.update_gui)
+
+    # Add a color gradient function to determine the volume level color
+    def get_volume_color(self, percentage):
+        """
+        Returns a color based on percentage:
+        - Full (70-100%): Green
+        - Medium (30-69%): Transitions from yellow to orange
+        - Low (0-29%): Red
+        """
+        if percentage >= 70:
+            # Green for high levels
+            return "#4CAF50"
+        elif percentage >= 30:
+            # Calculate a gradient from yellow to orange
+            # As percentage decreases from 70 to 30, we transition from yellow to orange
+            yellow = (255, 235, 59)  # RGB for yellow
+            orange = (255, 152, 0)   # RGB for orange
+            
+            # Calculate ratio (0 = 30%, 1 = 70%)
+            ratio = (percentage - 30) / 40
+            
+            # Interpolate between yellow and orange
+            r = int(yellow[0] * ratio + orange[0] * (1 - ratio))
+            g = int(yellow[1] * ratio + orange[1] * (1 - ratio))
+            b = int(yellow[2] * ratio + orange[2] * (1 - ratio))
+            
+            return f"#{r:02x}{g:02x}{b:02x}"
+        else:
+            # Red for low levels
+            return "#F44336"
 
     # Add a helper function for rounded rectangles
     def rounded_rectangle(self, canvas, x1, y1, x2, y2, radius=10, **kwargs):
