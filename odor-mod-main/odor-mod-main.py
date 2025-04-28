@@ -139,28 +139,8 @@ def control_freshener(aqi_values):
         lgpio.gpio_write(h, FRESHENER_PIN, 0)
         last_spray = current_time
 
-def log_data(aqi_values, dht_readings):
-    """Log data to MongoDB if connected, else to local JSON file."""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    data = {
-        "timestamp": timestamp,
-        "aqi": {f"GAS{i+1}": aqi_values[i] for i in range(4)},
-        "dht": {f"TEMP{i+1}": dht_readings[i] for i in range(4)}
-    }
-    
-    if collection is not None:
-        try:
-            collection.insert_one(data)
-            print("Data logged to MongoDB successfully.")
-            return True
-        except Exception as e:
-            print(f"MongoDB logging error: {e}. Falling back to local JSON.")
-            global client, db, collection
-            client = None
-            db = None
-            collection = None
-    
-    # Fallback to local JSON file
+# Save to local JSON
+def save_to_local_json(data):
     try:
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(LOCAL_FILE), exist_ok=True)
@@ -169,14 +149,42 @@ def log_data(aqi_values, dht_readings):
         with open(LOCAL_FILE, 'a') as f:
             json.dump(data, f)
             f.write('\n')  # JSON Lines format
-        print(f"Data logged to {LOCAL_FILE}")
+        print(f"Data saved to local storage.")
         return True
     except Exception as e:
         print(f"Local logging error: {e}")
         return False
 
-def main():
+def log_data(aqi_values, dht_readings):
+    """Log data to both MongoDB and local JSON file simultaneously."""
+    global client, db, collection
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    data = {
+        "timestamp": timestamp,
+        "aqi": {f"GAS{i+1}": aqi_values[i] for i in range(4)},
+        "dht": {f"TEMP{i+1}": dht_readings[i] for i in range(4)}
+    }
+    
+    # Always save to local storage first
+    save_to_local_json(data)
+    
+    # Then try to save to MongoDB if available
+    if collection is not None:
+        try:
+            collection.insert_one(data)
+            print("Data also saved to MongoDB successfully.")
+        except Exception as e:
+            print(f"MongoDB logging error: {e}. Data saved locally only.")
+            client = None
+            db = None
+            collection = None
+    
+    return True
+
+def start_monitoring():
+    """Start the continuous monitoring process."""
     print("Odor Module Running...")
+    print("Press CTRL+C to return to menu")
     try:
         while True:
             aqi_values = read_mq135()
@@ -187,8 +195,33 @@ def main():
             print(f"AQI: {aqi_values}, DHT: {[r['temp'] for r in dht_readings]}")
             time.sleep(5)  # Update every 5 seconds
     except KeyboardInterrupt:
-        print("\nStopping Odor Module...")
+        print("\nMonitoring stopped. Returning to menu...")
     finally:
+        # Turn off outputs when stopping monitoring
+        lgpio.gpio_write(h, FAN_PIN, 0)
+        lgpio.gpio_write(h, FRESHENER_PIN, 0)
+
+def main():
+    """Main CLI menu function."""
+    try:
+        while True:
+            print("\n" + "="*50)
+            print("Odor Module")
+            print("="*50)
+            print("1. Start the Module")
+            print("2. Exit the Program")
+            
+            choice = input("\nEnter your choice (1-2): ")
+            
+            if choice == "1":
+                start_monitoring()
+            elif choice == "2":
+                print("Exiting program...")
+                break
+            else:
+                print("Invalid choice. Please select 1 or 2.")
+    finally:
+        # Clean up hardware resources
         lgpio.gpio_write(h, FAN_PIN, 0)
         lgpio.gpio_write(h, FRESHENER_PIN, 0)
         lgpio.gpiochip_close(h)

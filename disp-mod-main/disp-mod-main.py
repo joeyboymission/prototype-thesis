@@ -89,9 +89,11 @@ def save_to_local_json(reading_doc):
         with open(temp_file, "w") as f:
             json.dump(existing_data, f, indent=4)
         os.replace(temp_file, JSON_FILE)
-        print(f"Reading {reading_doc['reading']} saved to local JSON file")
+        print(f"Data saved to local storage")
+        return True
     except IOError as e:
         print(f"Error saving to local JSON: {e}")
+        return False
 
 # Function to measure raw data and distance
 def measure_raw_data(trigger, echo, num_measurements=5):
@@ -147,86 +149,116 @@ def calculate_usable_volume(container, distance):
         usable_volume = 425.0 * volume_fraction
         return round(usable_volume, 2)
 
+# Function to save data to both MongoDB and local storage
+def save_data(reading_doc):
+    # Always save to local storage first
+    save_to_local_json(reading_doc)
+    
+    # Then try to save to MongoDB if available
+    global collection, client
+    if collection is not None:
+        try:
+            collection.insert_one(reading_doc)
+            print(f"Data also saved to MongoDB")
+            return True
+        except Exception as e:
+            print(f"Error saving to MongoDB: {e}. Data saved locally only.")
+            collection = None
+            client = None
+            return True
+    return True
+
 # Main monitoring function
-try:
-    print("Automatic Dispenser Module - Liquid Level Monitoring")
+def start_monitoring():
     reading_count = 0
     previous_volumes = {}
-
-    while True:
-        reading_count += 1
-        current_reading = {}
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"\nReading {reading_count} ({timestamp})")
-        
-        for i in range(4):
-            container = f"CONT{i+1}"
-            trigger = triggers[i]
-            echo = echos[i]
-            
-            pulse_duration, distance = measure_raw_data(trigger, echo)
-            if pulse_duration is None or distance is None:
-                print(f"{container}: Measurement failed (timeout or error)")
-                current_reading[container] = {
-                    "distance_cm": None,
-                    "remaining_volume_ml": None
-                }
-            else:
-                volume = calculate_usable_volume(container, distance)
-                amount_used = None
-                if reading_count > 1 and container in previous_volumes and previous_volumes[container] is not None and volume is not None:
-                    amount_used = round(previous_volumes[container] - volume, 2)
-                    if amount_used < 0:
-                        amount_used = 0
-                
-                print(f"{container}: Pulse Duration = {pulse_duration:.6f} s, Distance = {distance} cm, Remaining Volume = {volume if volume is not None else 'N/A'} mL", end="")
-                if amount_used is not None:
-                    print(f", Amount Used: {amount_used} mL")
-                else:
-                    print()
-                
-                current_reading[container] = {
-                    "distance_cm": distance,
-                    "remaining_volume_ml": volume
-                }
-            
-            previous_volumes[container] = volume
-        
-        # Save to MongoDB Atlas or local JSON as fallback
-        reading_doc = {
-            "reading": reading_count,
-            "timestamp": timestamp,
-            "data": current_reading
-        }
-        if collection is not None:
-            try:
-                collection.insert_one(reading_doc)
-                print(f"Reading {reading_count} saved to MongoDB Atlas")
-            except Exception as e:
-                print(f"Error saving to MongoDB: {e}. Falling back to local JSON.")
-                collection = None
-                save_to_local_json(reading_doc)
-        else:
-            save_to_local_json(reading_doc)
-        
-        # Ask if the user wants to read again
+    delay_between_readings = 5  # seconds between readings
+    
+    print("Dispenser Module - Liquid Level Monitoring")
+    print("Press CTRL+C to return to menu\n")
+    
+    try:
         while True:
-            choice = input("\nDo you want to read the measurements again? (Y/N): ").strip().upper()
-            if choice in ["Y", "N"]:
-                break
-            print("Please enter 'Y' or 'N'.")
-        
-        if choice == "N":
-            break
+            reading_count += 1
+            current_reading = {}
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"\nReading {reading_count} ({timestamp})")
+            
+            for i in range(4):
+                container = f"CONT{i+1}"
+                trigger = triggers[i]
+                echo = echos[i]
+                
+                pulse_duration, distance = measure_raw_data(trigger, echo)
+                if pulse_duration is None or distance is None:
+                    print(f"{container}: Measurement failed (timeout or error)")
+                    current_reading[container] = {
+                        "distance_cm": None,
+                        "remaining_volume_ml": None
+                    }
+                else:
+                    volume = calculate_usable_volume(container, distance)
+                    amount_used = None
+                    if reading_count > 1 and container in previous_volumes and previous_volumes[container] is not None and volume is not None:
+                        amount_used = round(previous_volumes[container] - volume, 2)
+                        if amount_used < 0:
+                            amount_used = 0
+                    
+                    print(f"{container}: Pulse Duration = {pulse_duration:.6f} s, Distance = {distance} cm, Remaining Volume = {volume if volume is not None else 'N/A'} mL", end="")
+                    if amount_used is not None:
+                        print(f", Amount Used: {amount_used} mL")
+                    else:
+                        print()
+                    
+                    current_reading[container] = {
+                        "distance_cm": distance,
+                        "remaining_volume_ml": volume
+                    }
+                
+                previous_volumes[container] = volume
+            
+            # Save to both MongoDB and local storage
+            reading_doc = {
+                "reading": reading_count,
+                "timestamp": timestamp,
+                "data": current_reading
+            }
+            save_data(reading_doc)
+            
+            # Wait for specified time before next reading
+            time.sleep(delay_between_readings)
+            
+    except KeyboardInterrupt:
+        print("\nMonitoring stopped. Returning to menu...")
 
-except KeyboardInterrupt:
-    print("\nMonitoring interrupted by user.")
-except Exception as e:
-    print(f"\nAn error occurred: {e}")
-finally:
-    # Cleanup GPIO pins and close chip
-    for pin in triggers + echos:
-        lgpio.gpio_free(h, pin)
-    lgpio.gpiochip_close(h)
-    if client:
-        client.close()
+def main():
+    """Main CLI menu function."""
+    try:
+        while True:
+            print("\n" + "="*50)
+            print("Dispenser Module")
+            print("="*50)
+            print("1. Start the Module")
+            print("2. Exit the Program")
+            
+            choice = input("\nEnter your choice (1-2): ")
+            
+            if choice == "1":
+                start_monitoring()
+            elif choice == "2":
+                print("Exiting program...")
+                break
+            else:
+                print("Invalid choice. Please select 1 or 2.")
+    except Exception as e:
+        print(f"\nAn error occurred: {e}")
+    finally:
+        # Cleanup GPIO pins and close chip
+        for pin in triggers + echos:
+            lgpio.gpio_free(h, pin)
+        lgpio.gpiochip_close(h)
+        if client:
+            client.close()
+
+if __name__ == "__main__":
+    main()

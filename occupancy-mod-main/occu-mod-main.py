@@ -109,15 +109,49 @@ def write_json(file_path, data):
 
 # MongoDB handling
 def update_mongo(entry):
+    global mongo_collection
+    
+    # Always save to local storage first
+    save_to_local_json(entry)
+    
+    # Then try to save to MongoDB if available
     if mongo_collection is None:
-        print("MongoDB unreachable, saving to local JSON only.")
         return
+    
     try:
         mongo_collection.insert_one(entry)
+        print("Data also saved to MongoDB.")
     except Exception as e:
-        print(f"Error updating MongoDB: {e}. Saving to local JSON only.")
-        global mongo_collection
+        print(f"Error updating MongoDB: {e}. Data saved locally only.")
         mongo_collection = None
+
+# Save to local JSON
+def save_to_local_json(entry):
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
+        
+        # Read existing data
+        existing_data = []
+        if os.path.exists(JSON_FILE):
+            try:
+                with open(JSON_FILE, "r") as f:
+                    existing_data = json.load(f)
+            except json.JSONDecodeError:
+                existing_data = []
+        
+        # Append new entry if it has a visitor_id
+        if "visitor_id" in entry:
+            existing_data.append(entry)
+            
+            # Write back to file
+            temp_file = JSON_FILE + ".tmp"
+            with open(temp_file, "w") as f:
+                json.dump(existing_data, f, indent=4)
+            os.replace(temp_file, JSON_FILE)
+            print(f"Data saved to local storage.")
+    except Exception as e:
+        print(f"Error saving to local JSON: {e}")
 
 # Load initial state
 def load_initial_state(file_path):
@@ -165,10 +199,11 @@ def monitor_occupancy(file_path):
     
     # Load initial state
     load_initial_state(file_path)
-    print("Now listening!")
+    print("Now monitoring occupancy!")
     print(f"Visitor Count: {max(visitor_count, 0)}")
     print(f"Presence: {current_state}")
     print("Duration: null" if current_start_time is None else format_duration(time.time() - current_start_time))
+    print("Press CTRL+C to return to menu")
 
     last_sensor_state = lgpio.gpio_read(chip, SENSOR_PIN)
     detection_start = None
@@ -233,23 +268,27 @@ def monitor_occupancy(file_path):
 
 # CLI Menu
 def main():
-    print("Occupancy Module")
-    print("Select the following:")
-    print("1. Active monitor listening")
-    print("2. Exit")
-    choice = input("Enter your choice (1 or 2): ")
-
-    if choice == "1":
-        try:
-            monitor_occupancy(JSON_FILE)
-        except KeyboardInterrupt:
-            print("\nMonitoring stopped.")
-        except PermissionError as e:
-            print(f"Permission error accessing {DATA_DIR}: {e}. Try running with sudo.")
-    elif choice == "2":
-        print("Exiting...")
-    else:
-        print("Invalid choice. Please select 1 or 2.")
+    while True:
+        print("\n" + "="*50)
+        print("Occupancy Module")
+        print("="*50)
+        print("1. Start the Module")
+        print("2. Exit the Program")
+        
+        choice = input("\nEnter your choice (1-2): ")
+        
+        if choice == "1":
+            try:
+                monitor_occupancy(JSON_FILE)
+            except KeyboardInterrupt:
+                print("\nMonitoring stopped. Returning to menu...")
+            except PermissionError as e:
+                print(f"Permission error accessing {DATA_DIR}: {e}. Try running with sudo.")
+        elif choice == "2":
+            print("Exiting program...")
+            break
+        else:
+            print("Invalid choice. Please select 1 or 2.")
 
 if __name__ == "__main__":
     try:
