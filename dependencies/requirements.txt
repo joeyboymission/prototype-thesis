@@ -4,6 +4,14 @@
 pymongo>=4.12.0
 
 # ===========================================
+# GUI and System Dependencies
+# ===========================================
+# Note: Tkinter comes with Python installation
+# For Linux: sudo apt-get install python3-tk
+# For Windows: Included with Python installer
+psutil>=5.9.0
+
+# ===========================================
 # Hardware Interface Dependencies
 # ===========================================
 # DHT Sensor Libraries
