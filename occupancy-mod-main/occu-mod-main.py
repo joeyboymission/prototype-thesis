@@ -3,8 +3,19 @@ import time
 import json
 import os
 from datetime import datetime
-from pymongo import MongoClient
-from pymongo.errors import ConnectionError, ServerSelectionTimeoutError
+
+# Define global variables at the module level
+mongo_collection = None
+client = None
+
+# Try to import MongoDB libraries, but have a fallback if not available
+try:
+    from pymongo import MongoClient
+    from pymongo.errors import ServerSelectionTimeoutError
+    MONGODB_AVAILABLE = True
+except ImportError:
+    MONGODB_AVAILABLE = False
+    print("Warning: pymongo not available. Using local storage only.")
 
 # GPIO setup
 SENSOR_PIN = 17  # E18-D80NK signal
@@ -16,10 +27,13 @@ lgpio.gpio_write(chip, BUZZER_PIN, 0)
 
 # MongoDB setup
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
-mongo_collection = None
 
 def check_mongo_connection():
-    global mongo_collection
+    global mongo_collection, client
+    if not MONGODB_AVAILABLE:
+        print("MongoDB support not available, using local storage only.")
+        return False
+        
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Test connection
@@ -27,9 +41,10 @@ def check_mongo_connection():
         mongo_collection = db['occupancy_data']
         print("Connected to MongoDB successfully.")
         return True
-    except (ConnectionError, ServerSelectionTimeoutError) as e:
+    except Exception as e:
         print(f"Warning: Failed to connect to MongoDB: {e}. Falling back to local JSON.")
         mongo_collection = None
+        client = None
         return False
 
 # Initialize MongoDB connection
@@ -81,6 +96,9 @@ def read_json(file_path):
     return {"visitors": [], "summary": {"total_visitors": 0, "average_duration": 0}, "current_presence": False}
 
 def write_json(file_path, data):
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
     temp_file = file_path + ".tmp"
     try:
         with open(temp_file, "w") as f:
@@ -96,7 +114,7 @@ def update_mongo(entry):
         return
     try:
         mongo_collection.insert_one(entry)
-    except (ConnectionError, ServerSelectionTimeoutError) as e:
+    except Exception as e:
         print(f"Error updating MongoDB: {e}. Saving to local JSON only.")
         global mongo_collection
         mongo_collection = None
@@ -104,6 +122,10 @@ def update_mongo(entry):
 # Load initial state
 def load_initial_state(file_path):
     global current_state, visitor_count, log_list, current_start_time
+    
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
     data = read_json(file_path)
     log_list = data.get("visitors", [])
     if log_list:
@@ -139,7 +161,7 @@ def monitor_occupancy(file_path):
     global current_state, visitor_count, log_list, current_start_time, last_state_change_time
     
     # Ensure data directory exists
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     
     # Load initial state
     load_initial_state(file_path)
@@ -234,5 +256,5 @@ if __name__ == "__main__":
         main()
     finally:
         lgpio.gpiochip_close(chip)
-        if mongo_collection is not None:
+        if client is not None:
             client.close()

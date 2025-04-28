@@ -3,8 +3,15 @@ import time
 import os
 import json
 from datetime import datetime
-from pymongo import MongoClient
-from pymongo.errors import ConnectionError, ServerSelectionTimeoutError
+
+# Try to import MongoDB libraries, but have a fallback if not available
+try:
+    from pymongo import MongoClient
+    from pymongo.errors import ServerSelectionTimeoutError
+    MONGODB_AVAILABLE = True
+except ImportError:
+    MONGODB_AVAILABLE = False
+    print("Warning: pymongo not available. Using local storage only.")
 
 # MongoDB Atlas connection setup
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
@@ -19,6 +26,10 @@ os.makedirs(DATA_DIR, exist_ok=True)  # Create directory if it doesn't exist
 
 def check_mongo_connection():
     global client, db, collection
+    if not MONGODB_AVAILABLE:
+        print("MongoDB support not available, using local storage only.")
+        return False
+        
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Test connection
@@ -26,7 +37,7 @@ def check_mongo_connection():
         collection = db['dispenser_resource']
         print("Connected to MongoDB successfully.")
         return True
-    except (ConnectionError, ServerSelectionTimeoutError) as e:
+    except Exception as e:
         print(f"Warning: Failed to connect to MongoDB: {e}. Falling back to local JSON.")
         client = None
         db = None
@@ -188,8 +199,13 @@ try:
             "data": current_reading
         }
         if collection is not None:
-            collection.insert_one(reading_doc)
-            print(f"Reading {reading_count} saved to MongoDB Atlas")
+            try:
+                collection.insert_one(reading_doc)
+                print(f"Reading {reading_count} saved to MongoDB Atlas")
+            except Exception as e:
+                print(f"Error saving to MongoDB: {e}. Falling back to local JSON.")
+                collection = None
+                save_to_local_json(reading_doc)
         else:
             save_to_local_json(reading_doc)
         
@@ -212,4 +228,5 @@ finally:
     for pin in triggers + echos:
         lgpio.gpio_free(h, pin)
     lgpio.gpiochip_close(h)
-    client.close()
+    if client:
+        client.close()

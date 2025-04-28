@@ -7,8 +7,19 @@ import os
 import json
 from datetime import datetime
 import pytz
-from pymongo import MongoClient
-from pymongo.errors import ConnectionError, ServerSelectionTimeoutError
+
+# Define global variables at the module level
+client = None
+db = None
+collection = None
+
+try:
+    from pymongo import MongoClient
+    from pymongo.errors import ServerSelectionTimeoutError
+    MONGODB_AVAILABLE = True
+except ImportError:
+    MONGODB_AVAILABLE = False
+    print("Warning: pymongo not available. Using local storage only.")
 
 # Prerequisites:
 # 1. Install dependencies from requirements.txt:
@@ -33,7 +44,11 @@ lgpio.gpio_claim_output(h, FRESHENER_PIN, 0)  # Active HIGH
 # Serial Setup for Arduino Mega
 SERIAL_PORT = "/dev/ttyUSB0"
 BAUD_RATE = 9600
-ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=2)
+try:
+    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=2)
+except serial.SerialException as e:
+    print(f"Error opening serial port: {e}")
+    ser = None
 
 # DHT22 Setup
 dht_pins = [board.D4, board.D5, board.D6, board.D12]  # GPIO4,5,6,12
@@ -41,12 +56,13 @@ dht_sensors = [adafruit_dht.DHT22(pin) for pin in dht_pins]
 
 # MongoDB Setup
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
-client = None
-db = None
-collection = None
 
 def check_mongo_connection():
     global client, db, collection
+    if not MONGODB_AVAILABLE:
+        print("MongoDB support not available, using local storage only.")
+        return False
+        
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Test connection
@@ -54,7 +70,7 @@ def check_mongo_connection():
         collection = db["odor_module"]
         print("Connected to MongoDB successfully.")
         return True
-    except (ConnectionError, ServerSelectionTimeoutError) as e:
+    except Exception as e:
         print(f"Warning: Failed to connect to MongoDB: {e}. Falling back to local JSON.")
         client = None
         db = None
@@ -76,6 +92,9 @@ SPRAY_DURATION = 1        # 1 second spray
 
 def read_mq135():
     """Read AQI from Arduino Mega over serial."""
+    if ser is None:
+        return [0] * 4
+        
     try:
         ser.flush()  # Clear buffer
         line = ser.readline().decode('utf-8').strip()
@@ -122,7 +141,7 @@ def control_freshener(aqi_values):
 
 def log_data(aqi_values, dht_readings):
     """Log data to MongoDB if connected, else to local JSON file."""
-    timestamp = datetime.now(pytz.UTC).isoformat()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     data = {
         "timestamp": timestamp,
         "aqi": {f"GAS{i+1}": aqi_values[i] for i in range(4)},
@@ -134,7 +153,7 @@ def log_data(aqi_values, dht_readings):
             collection.insert_one(data)
             print("Data logged to MongoDB successfully.")
             return True
-        except (ConnectionError, ServerSelectionTimeoutError) as e:
+        except Exception as e:
             print(f"MongoDB logging error: {e}. Falling back to local JSON.")
             global client, db, collection
             client = None
@@ -173,7 +192,8 @@ def main():
         lgpio.gpio_write(h, FAN_PIN, 0)
         lgpio.gpio_write(h, FRESHENER_PIN, 0)
         lgpio.gpiochip_close(h)
-        ser.close()
+        if ser:
+            ser.close()
         if client:
             client.close()
 
