@@ -1,212 +1,123 @@
+import serial
 import time
-import board
-import adafruit_dht
-import smbus
 import lgpio
-from pymongo import MongoClient
-import logging
+import adafruit_dht
+import board
+import pymongo
+from datetime import datetime
+import pytz
 
 # Prerequisites:
 # 1. Install dependencies from requirements.txt:
-#    Run `sudo pip3 install -r requirements.txt` to install adafruit-circuitpython-dht, adafruit-blinka, pymongo.
+#    Run `sudo pip3 install -r requirements.txt` (pyserial>=3.5, pymongo>=4.12.0, etc.).
 # 2. Install lgpio library:
 #    Run `sudo apt install python3-lgpio` for RPi-LGPIO.
 # 3. Connect hardware:
-#    - DHT22 sensors: GPIO4 (Pin 7), GPIO5 (Pin 29), GPIO6 (Pin 31), GPIO12 (Pin 32).
-#    - E18-D80NK: GPIO17 (Pin 11, with 10kΩ/15kΩ voltage divider).
-#    - 8RELAY-B: K2 (exhaust fan, GPIO23, Pin 16), K3 (air freshener, GPIO22, Pin 15).
-#    - I2C: Arduino Mega A4 (SDA) to GPIO2 (Pin 3), A5 (SCL) to GPIO3 (Pin 5).
+#    - USB: Arduino Mega to Pi (/dev/ttyUSB0).
+#    - DHT22: TEMP1-TEMP4 on GPIO4,5,6,12.
+#    - 8RELAY-B: K2 (Exhaust Fan, GPIO23), K3 (Air Freshener, GPIO22).
+#    - Common GND (e.g., Pi Pin 6 to Arduino GND).
+# 4. Run with sudo: `sudo python3 odor-mod-main.py`.
 
-# Setup logging to file
-logging.basicConfig(filename='odor_module.log', level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# MongoDB Atlas connection setup
-MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/bet5_project?retryWrites=true&w=majority&appName=SmartRestroomWeb"
-client = MongoClient(MONGO_URI)
-db = client['bet5_project']
-collection = db['odor_module']
-
-# GPIO setup using lgpio
+# GPIO Setup
 GPIO_CHIP = 0
 h = lgpio.gpiochip_open(GPIO_CHIP)
+FAN_PIN = 23      # GPIO23, Exhaust Fan (220V, 60W)
+FRESHENER_PIN = 22  # GPIO22, Air Freshener (3.3V, <0.33W)
+lgpio.gpio_claim_output(h, FAN_PIN, 0)      # Active HIGH
+lgpio.gpio_claim_output(h, FRESHENER_PIN, 0)  # Active HIGH
 
-FAN_RELAY_PIN = 23  # 8RELAY-B K2 for exhaust fan
-FRESHENER_RELAY_PIN = 22  # 8RELAY-B K3 for air freshener
-SENSOR_PIN = 17  # Occupancy sensor (E18-D80NK, temporary)
-
-# Configure GPIO pins
-lgpio.gpio_claim_output(h, FAN_RELAY_PIN)
-lgpio.gpio_claim_output(h, FRESHENER_RELAY_PIN)
-lgpio.gpio_claim_input(h, SENSOR_PIN, pull=lgpio.PUD_UP)  # Pull-up for occupancy sensor
-lgpio.gpio_write(h, FAN_RELAY_PIN, 1)  # Fan off (active-low)
-lgpio.gpio_write(h, FRESHENER_RELAY_PIN, 1)  # Freshener off (active-low)
+# Serial Setup for Arduino Mega
+SERIAL_PORT = "/dev/ttyUSB0"
+BAUD_RATE = 9600
+ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=2)
 
 # DHT22 Setup
-dht_devices = [
-    adafruit_dht.DHT22(board.D4),  # GPIO4
-    adafruit_dht.DHT22(board.D5),  # GPIO5
-    adafruit_dht.DHT22(board.D6),  # GPIO6
-    adafruit_dht.DHT22(board.D12)  # GPIO12
-]
+dht_pins = [board.D4, board.D5, board.D6, board.D12]  # GPIO4,5,6,12
+dht_sensors = [adafruit_dht.DHT22(pin) for pin in dht_pins]
 
-# I2C Setup for Arduino Mega (MQ135 readings)
-bus = smbus.SMBus(1)  # I2C bus 1 on Pi
-ARDUINO_ADDRESS = 8
+# MongoDB Setup
+client = pymongo.MongoClient("mongodb://localhost:27017/")
+db = client["bet5_project"]
+collection = db["odor_module"]
 
-# Global variables
-fan_status = False
-freshener_triggered = False
-is_occupied = False
-last_sensor_state = 1  # 1 = HIGH (no detection) with pull-up
-last_exit_time = time.time()
-last_spray_time = time.time()
-aqi_history = []  # For air_quality_trend
-FAN_POST_EXIT_DURATION = 1200  # 20 minutes
-last_time = time.time()  # For debouncing
+# Air Freshener Timing
+last_spray = 0
+SPRAY_INTERVAL = 36 * 60  # 36 minutes in seconds
+SPRAY_DURATION = 1        # 1 second spray
 
-def read_sensors():
-    """Read temperature, humidity from DHT22 and AQI from Arduino Mega with retries."""
-    temp = [0] * 4
-    hum = [0] * 4
-    aqi = [0] * 4
-    for i, dht in enumerate(dht_devices):
-        try:
-            temp[i] = dht.temperature
-            hum[i] = dht.humidity
-        except RuntimeError as e:
-            logging.error(f"DHT22 {i+1} read error: {e}")
-            temp[i], hum[i] = 0, 0
-    for attempt in range(3):  # Retry I2C up to 3 times
-        try:
-            data = bus.read_i2c_block_data(ARDUINO_ADDRESS, 0, 8)
-            for i in range(4):
-                aqi[i] = (data[i*2] << 8) + data[i*2 + 1]  # Combine MSB and LSB (0-500)
-            break
-        except Exception as e:
-            logging.error(f"I2C read attempt {attempt+1} failed: {e}")
-            if attempt == 2:
-                aqi = [0] * 4  # Default on final failure
-            time.sleep(0.1)
-    return temp, hum, aqi
-
-def calculate_avg_aqi(aqi):
-    """Calculate average AQI and update history for trend."""
-    global aqi_history
-    avg_aqi = sum(aqi) / len(aqi) if aqi else 0
-    aqi_history.append(avg_aqi)
-    if len(aqi_history) > 10:  # Keep last 10 readings
-        aqi_history.pop(0)
-    return avg_aqi
-
-def calculate_air_quality_trend():
-    """Calculate AQI trend (increasing, decreasing, stable)."""
-    if len(aqi_history) < 2:
-        return "unknown"
-    diff = aqi_history[-1] - aqi_history[-2]
-    return "increasing" if diff > 5 else "decreasing" if diff < -5 else "stable"
-
-def check_occupancy():
-    """Check occupancy status using E18-D80NK sensor (temporary)."""
-    global is_occupied, last_sensor_state, last_exit_time, last_time
-    current_sensor_state = lgpio.gpio_read(h, SENSOR_PIN)
-    if current_sensor_state != last_sensor_state and time.time() - last_time > 1.0:
-        if current_sensor_state == 0:  # LOW = Occupied
-            is_occupied = True
-        else:  # HIGH = Vacant
-            is_occupied = False
-            last_exit_time = time.time()  # Record exit time
-        last_sensor_state = current_sensor_state
-        last_time = time.time()
-        return not is_occupied  # True if just vacated
-    return False
-
-def control_fan(avg_aqi, avg_temp, avg_hum):
-    """Control exhaust fan based on AQI, temperature, humidity, and occupancy."""
-    global fan_status, last_exit_time
-    should_run = False
-    if is_occupied:  # Presence trigger
-        should_run = True
-    elif time.time() - last_exit_time < FAN_POST_EXIT_DURATION:  # 20-min post-exit
-        should_run = True
-    elif avg_aqi > 300:  # Primary AQI trigger
-        should_run = True
-    elif avg_aqi > 100 and avg_temp > 25:  # AQI and temperature trigger
-        should_run = True
-    elif avg_aqi > 150 and avg_temp > 30:  # Severe AQI and temperature
-        should_run = True
-    elif avg_hum > 60 and avg_aqi > 100:  # Humidity amplifies odor
-        should_run = True
-
-    if should_run and not fan_status:
-        lgpio.gpio_write(h, FAN_RELAY_PIN, 0)  # LOW to activate (active-low)
-        fan_status = True
-        print("Fan ON")
-    elif not should_run and fan_status:
-        lgpio.gpio_write(h, FAN_RELAY_PIN, 1)  # HIGH to deactivate
-        fan_status = False
-        print("Fan OFF")
-
-def control_freshener(avg_aqi, vacated):
-    """Control air freshener based on AQI, vacancy, or 36-min timer."""
-    global freshener_triggered, last_spray_time
-    should_spray = False
-    if (avg_aqi > 300 or vacated or time.time() - last_spray_time >= 2160) and not freshener_triggered:
-        should_spray = True
-    elif avg_aqi > 150 and avg_temp > 30:  # Additional trigger for high temp
-        should_spray = True
-
-    if should_spray:
-        lgpio.gpio_write(h, FRESHENER_RELAY_PIN, 0)  # LOW to activate (active-low)
-        time.sleep(0.5)  # 500ms pulse
-        lgpio.gpio_write(h, FRESHENER_RELAY_PIN, 1)  # HIGH to deactivate
-        freshener_triggered = True
-        last_spray_time = time.time()
-        print("Air Freshener Triggered")
-    elif avg_aqi <= 300 and not vacated:
-        freshener_triggered = False
-
-def log_data(temp, hum, aqi, avg_aqi, avg_temp, avg_hum):
-    """Log sensor data to MongoDB."""
-    data = {
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "temperature": avg_temp,
-        "humidity": avg_hum,
-        "gas_level": aqi,  # List of 4 AQI values
-        "air_quality_index": avg_aqi,
-        "fan_status": "on" if fan_status else "off",
-        "air_freshener_status": "triggered" if freshener_triggered else "off",
-        "occupancy_status": "occupied" if is_occupied else "vacant",
-        "average_gas_level": avg_aqi,
-        "air_quality_trend": calculate_air_quality_trend(),
-        "critical_event": avg_aqi > 300
-    }
+def read_mq135():
+    """Read AQI from Arduino Mega over serial."""
     try:
-        collection.insert_one(data)
-        print("Data logged to MongoDB")
+        ser.flush()  # Clear buffer
+        line = ser.readline().decode('utf-8').strip()
+        if line:
+            aqi_values = [int(x) for x in line.split(',')]
+            if len(aqi_values) == 4:
+                return [max(0, min(500, x)) for x in aqi_values]  # Clamp to 0-500
+        return [0] * 4
     except Exception as e:
-        logging.error(f"MongoDB logging error: {e}")
+        print(f"Serial error: {e}")
+        return [0] * 4
 
-try:
-    while True:
-        temp, hum, aqi = read_sensors()
-        avg_aqi = calculate_avg_aqi(aqi)
-        avg_temp = sum(temp) / len(temp) if temp else 0
-        avg_hum = sum(hum) / len(hum) if hum else 0
-        vacated = check_occupancy()
-        control_fan(avg_aqi, avg_temp, avg_hum)
-        control_freshener(avg_aqi, vacated)
-        log_data(temp, hum, aqi, avg_aqi, avg_temp, avg_hum)
-        
-        print(f"Avg AQI: {avg_aqi:.2f}, Avg Temp: {avg_temp:.1f}°C, Avg Hum: {avg_hum:.1f}%, Occupancy: {'occupied' if is_occupied else 'vacant'}")
-        time.sleep(10)
+def read_dht22():
+    """Read temperature and humidity from DHT22 sensors."""
+    readings = []
+    for i, sensor in enumerate(dht_sensors):
+        try:
+            temp = sensor.temperature
+            hum = sensor.humidity
+            readings.append({"temp": temp, "hum": hum})
+        except Exception as e:
+            print(f"DHT22 {i+1} error: {e}")
+            readings.append({"temp": 0, "hum": 0})
+    return readings
 
-except KeyboardInterrupt:
-    print("Shutting down...")
-finally:
-    lgpio.gpio_write(h, FAN_RELAY_PIN, 1)  # Ensure fan off
-    lgpio.gpio_write(h, FRESHENER_RELAY_PIN, 1)  # Ensure freshener off
-    lgpio.gpiochip_close(h)
-    for dht in dht_devices:
-        dht.exit()
-    client.close()
-    logging.info("Program terminated")
+def control_fan(aqi_values):
+    """Control exhaust fan based on AQI."""
+    max_aqi = max(aqi_values)
+    lgpio.gpio_write(h, FAN_PIN, 1 if max_aqi > 300 else 0)
+
+def control_freshener(aqi_values):
+    """Control air freshener based on AQI or timer."""
+    global last_spray
+    current_time = time.time()
+    max_aqi = max(aqi_values)
+    if max_aqi > 300 or (current_time - last_spray) >= SPRAY_INTERVAL:
+        lgpio.gpio_write(h, FRESHENER_PIN, 1)
+        time.sleep(SPRAY_DURATION)
+        lgpio.gpio_write(h, FRESHENER_PIN, 0)
+        last_spray = current_time
+
+def log_data(aqi_values, dht_readings):
+    """Log data to MongoDB."""
+    timestamp = datetime.now(pytz.UTC).isoformat()
+    data = {
+        "timestamp": timestamp,
+        "aqi": {f"GAS{i+1}": aqi_values[i] for i in range(4)},
+        "dht": {f"TEMP{i+1}": dht_readings[i] for i in range(4)}
+    }
+    collection.insert_one(data)
+
+def main():
+    print("Odor Module Running...")
+    try:
+        while True:
+            aqi_values = read_mq135()
+            dht_readings = read_dht22()
+            control_fan(aqi_values)
+            control_freshener(aqi_values)
+            log_data(aqi_values, dht_readings)
+            print(f"AQI: {aqi_values}, DHT: {[r['temp'] for r in dht_readings]}")
+            time.sleep(5)  # Update every 5 seconds
+    except KeyboardInterrupt:
+        print("\nStopping Odor Module...")
+    finally:
+        lgpio.gpio_write(h, FAN_PIN, 0)
+        lgpio.gpio_write(h, FRESHENER_PIN, 0)
+        lgpio.gpiochip_close(h)
+        ser.close()
+        client.close()
+
+if __name__ == "__main__":
+    main()

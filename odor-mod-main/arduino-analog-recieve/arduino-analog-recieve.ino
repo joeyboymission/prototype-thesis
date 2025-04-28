@@ -1,8 +1,6 @@
 #define NUM_SENSORS 4  // Number of MQ135 sensors
 
-// Calibration constants (same as original)
-const float R0 = 10.0;  // Sensor resistance in clean air (kOhms, placeholder)
-const float RL = 10.0;  // Load resistor (kOhms, typical for MQ135)
+// Calibration constants (simplified, no resistor calculations)
 const float AQI_MIN = 0.0;
 const float AQI_MAX = 500.0;
 const float ANALOG_MIN = 0.0;
@@ -27,11 +25,8 @@ void loop() {
       rawValue = 0;  // Handle invalid readings
     }
     
-    // Convert raw value to AQI (simplified linear mapping)
-    float voltage = (rawValue / ANALOG_MAX) * 5.0;  // Convert to voltage (5V)
-    float rs = ((5.0 * RL) / voltage) - RL;  // Sensor resistance
-    float ratio = rs / R0;  // Resistance ratio
-    float aqi = mapFloat(ratio, 0.1, 10.0, AQI_MAX, AQI_MIN);  // Map to AQI
+    // Directly map raw value to AQI (linear mapping)
+    float aqi = mapFloat(rawValue, ANALOG_MIN, ANALOG_MAX, AQI_MIN, AQI_MAX);
     aqiValues[i] = (uint16_t)constrain(aqi, AQI_MIN, AQI_MAX); // Clamp and store
   }
   
@@ -43,7 +38,7 @@ void loop() {
   }
   Serial.println();  // Newline to mark end of data
   
-  delay(200);  // Update every 200ms to match original
+  delay(200);  // Update every 200ms
 }
 
 // Helper function to map float values
