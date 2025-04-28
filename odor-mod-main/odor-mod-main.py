@@ -3,9 +3,12 @@ import time
 import lgpio
 import adafruit_dht
 import board
-import pymongo
+import os
+import json
 from datetime import datetime
 import pytz
+from pymongo import MongoClient
+from pymongo.errors import ConnectionError, ServerSelectionTimeoutError
 
 # Prerequisites:
 # 1. Install dependencies from requirements.txt:
@@ -37,9 +40,34 @@ dht_pins = [board.D4, board.D5, board.D6, board.D12]  # GPIO4,5,6,12
 dht_sensors = [adafruit_dht.DHT22(pin) for pin in dht_pins]
 
 # MongoDB Setup
-client = pymongo.MongoClient("mongodb://localhost:27017/")
-db = client["bet5_project"]
-collection = db["odor_module"]
+MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
+client = None
+db = None
+collection = None
+
+def check_mongo_connection():
+    global client, db, collection
+    try:
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')  # Test connection
+        db = client["Smart_Cubicle"]
+        collection = db["odor_module"]
+        print("Connected to MongoDB successfully.")
+        return True
+    except (ConnectionError, ServerSelectionTimeoutError) as e:
+        print(f"Warning: Failed to connect to MongoDB: {e}. Falling back to local JSON.")
+        client = None
+        db = None
+        collection = None
+        return False
+
+# Initialize MongoDB connection
+check_mongo_connection()
+
+# Local Fallback Setup
+LOCAL_DIR = "/home/admin/Documents/local-data"
+LOCAL_FILE = os.path.join(LOCAL_DIR, "odor-data.json")
+os.makedirs(LOCAL_DIR, exist_ok=True)  # Create directory if it doesn't exist
 
 # Air Freshener Timing
 last_spray = 0
@@ -52,9 +80,12 @@ def read_mq135():
         ser.flush()  # Clear buffer
         line = ser.readline().decode('utf-8').strip()
         if line:
-            aqi_values = [int(x) for x in line.split(',')]
-            if len(aqi_values) == 4:
-                return [max(0, min(500, x)) for x in aqi_values]  # Clamp to 0-500
+            try:
+                aqi_values = [int(x) for x in line.split(',')]
+                if len(aqi_values) == 4 and all(0 <= x <= 500 for x in aqi_values):
+                    return aqi_values
+            except ValueError:
+                print(f"Invalid serial data: {line}")
         return [0] * 4
     except Exception as e:
         print(f"Serial error: {e}")
@@ -90,14 +121,40 @@ def control_freshener(aqi_values):
         last_spray = current_time
 
 def log_data(aqi_values, dht_readings):
-    """Log data to MongoDB."""
+    """Log data to MongoDB if connected, else to local JSON file."""
     timestamp = datetime.now(pytz.UTC).isoformat()
     data = {
         "timestamp": timestamp,
         "aqi": {f"GAS{i+1}": aqi_values[i] for i in range(4)},
         "dht": {f"TEMP{i+1}": dht_readings[i] for i in range(4)}
     }
-    collection.insert_one(data)
+    
+    if collection is not None:
+        try:
+            collection.insert_one(data)
+            print("Data logged to MongoDB successfully.")
+            return True
+        except (ConnectionError, ServerSelectionTimeoutError) as e:
+            print(f"MongoDB logging error: {e}. Falling back to local JSON.")
+            global client, db, collection
+            client = None
+            db = None
+            collection = None
+    
+    # Fallback to local JSON file
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(LOCAL_FILE), exist_ok=True)
+        
+        # Use JSON Lines format for efficiency
+        with open(LOCAL_FILE, 'a') as f:
+            json.dump(data, f)
+            f.write('\n')  # JSON Lines format
+        print(f"Data logged to {LOCAL_FILE}")
+        return True
+    except Exception as e:
+        print(f"Local logging error: {e}")
+        return False
 
 def main():
     print("Odor Module Running...")
@@ -117,7 +174,8 @@ def main():
         lgpio.gpio_write(h, FRESHENER_PIN, 0)
         lgpio.gpiochip_close(h)
         ser.close()
-        client.close()
+        if client:
+            client.close()
 
 if __name__ == "__main__":
     main()

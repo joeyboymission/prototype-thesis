@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 from pymongo import MongoClient
-from pymongo.errors import ConnectionError
+from pymongo.errors import ConnectionError, ServerSelectionTimeoutError
 
 # GPIO setup
 SENSOR_PIN = 17  # E18-D80NK signal
@@ -16,13 +16,24 @@ lgpio.gpio_write(chip, BUZZER_PIN, 0)
 
 # MongoDB setup
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
-try:
-    client = MongoClient(MONGO_URI)
-    db = client['Smart_Cubicle']
-    mongo_collection = db['occupancy_data']
-except ConnectionError as e:
-    print(f"Warning: Failed to connect to MongoDB: {e}. Using local JSON only.")
-    mongo_collection = None
+mongo_collection = None
+
+def check_mongo_connection():
+    global mongo_collection
+    try:
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')  # Test connection
+        db = client['Smart_Cubicle']
+        mongo_collection = db['occupancy_data']
+        print("Connected to MongoDB successfully.")
+        return True
+    except (ConnectionError, ServerSelectionTimeoutError) as e:
+        print(f"Warning: Failed to connect to MongoDB: {e}. Falling back to local JSON.")
+        mongo_collection = None
+        return False
+
+# Initialize MongoDB connection
+check_mongo_connection()
 
 # Constants
 DEBOUNCE_TIME = 0.5  # 500ms
@@ -81,11 +92,14 @@ def write_json(file_path, data):
 # MongoDB handling
 def update_mongo(entry):
     if mongo_collection is None:
+        print("MongoDB unreachable, saving to local JSON only.")
         return
     try:
         mongo_collection.insert_one(entry)
-    except ConnectionError as e:
-        print(f"Error updating MongoDB: {e}")
+    except (ConnectionError, ServerSelectionTimeoutError) as e:
+        print(f"Error updating MongoDB: {e}. Saving to local JSON only.")
+        global mongo_collection
+        mongo_collection = None
 
 # Load initial state
 def load_initial_state(file_path):

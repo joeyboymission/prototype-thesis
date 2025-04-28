@@ -1,13 +1,40 @@
 import lgpio
 import time
+import os
+import json
 from datetime import datetime
 from pymongo import MongoClient
+from pymongo.errors import ConnectionError, ServerSelectionTimeoutError
 
 # MongoDB Atlas connection setup
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
-client = MongoClient(MONGO_URI)
-db = client['Smart_Cubicle']
-collection = db['dispenser_resource']
+client = None
+db = None
+collection = None
+
+# Local data fallback setup
+DATA_DIR = "/home/admin/Documents/local-data"
+JSON_FILE = os.path.join(DATA_DIR, "dispenser-data.json")
+os.makedirs(DATA_DIR, exist_ok=True)  # Create directory if it doesn't exist
+
+def check_mongo_connection():
+    global client, db, collection
+    try:
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')  # Test connection
+        db = client['Smart_Cubicle']
+        collection = db['dispenser_resource']
+        print("Connected to MongoDB successfully.")
+        return True
+    except (ConnectionError, ServerSelectionTimeoutError) as e:
+        print(f"Warning: Failed to connect to MongoDB: {e}. Falling back to local JSON.")
+        client = None
+        db = None
+        collection = None
+        return False
+
+# Initialize MongoDB connection
+check_mongo_connection()
 
 # GPIO setup using lgpio
 GPIO_CHIP = 0
@@ -30,6 +57,30 @@ CALIBRATION_DATA = {
     "CONT3": {"full": 2.23, "empty": 12.33},
     "CONT4": {"full": 2.91, "empty": 12.88}
 }
+
+# Function to save data to local JSON file
+def save_to_local_json(reading_doc):
+    try:
+        # Read existing data
+        existing_data = []
+        if os.path.exists(JSON_FILE):
+            try:
+                with open(JSON_FILE, "r") as f:
+                    existing_data = json.load(f)
+            except json.JSONDecodeError:
+                existing_data = []
+        
+        # Append new reading
+        existing_data.append(reading_doc)
+        
+        # Write back to file
+        temp_file = JSON_FILE + ".tmp"
+        with open(temp_file, "w") as f:
+            json.dump(existing_data, f, indent=4)
+        os.replace(temp_file, JSON_FILE)
+        print(f"Reading {reading_doc['reading']} saved to local JSON file")
+    except IOError as e:
+        print(f"Error saving to local JSON: {e}")
 
 # Function to measure raw data and distance
 def measure_raw_data(trigger, echo, num_measurements=5):
@@ -130,14 +181,17 @@ try:
             
             previous_volumes[container] = volume
         
-        # Save to MongoDB Atlas
+        # Save to MongoDB Atlas or local JSON as fallback
         reading_doc = {
             "reading": reading_count,
             "timestamp": timestamp,
             "data": current_reading
         }
-        collection.insert_one(reading_doc)
-        print(f"Reading {reading_count} saved to MongoDB Atlas")
+        if collection is not None:
+            collection.insert_one(reading_doc)
+            print(f"Reading {reading_count} saved to MongoDB Atlas")
+        else:
+            save_to_local_json(reading_doc)
         
         # Ask if the user wants to read again
         while True:
