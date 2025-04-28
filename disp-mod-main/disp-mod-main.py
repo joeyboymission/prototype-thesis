@@ -8,10 +8,23 @@ from datetime import datetime
 try:
     from pymongo import MongoClient
     from pymongo.errors import ServerSelectionTimeoutError
+    from bson import ObjectId
     MONGODB_AVAILABLE = True
+    
+    # Create a custom JSON encoder to handle MongoDB ObjectId
+    class MongoJSONEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, ObjectId):
+                return str(obj)  # Convert ObjectId to string
+            return super().default(obj)
+            
 except ImportError:
     MONGODB_AVAILABLE = False
     print("Warning: pymongo not available. Using local storage only.")
+    
+    # Fallback encoder if MongoDB is not available
+    class MongoJSONEncoder(json.JSONEncoder):
+        pass
 
 # MongoDB Atlas connection setup
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
@@ -94,7 +107,7 @@ def save_to_local_json(reading_doc):
         # Write back to file
         temp_file = JSON_FILE + ".tmp"
         with open(temp_file, "w") as f:
-            json.dump(existing_data, f, indent=2)
+            json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
         os.replace(temp_file, JSON_FILE)
         print(f"Data saved to local storage. Total records: {len(existing_data)}")
         return True

@@ -12,10 +12,23 @@ client = None
 try:
     from pymongo import MongoClient
     from pymongo.errors import ServerSelectionTimeoutError
+    from bson import ObjectId
     MONGODB_AVAILABLE = True
+    
+    # Create a custom JSON encoder to handle MongoDB ObjectId
+    class MongoJSONEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, ObjectId):
+                return str(obj)  # Convert ObjectId to string
+            return super().default(obj)
+            
 except ImportError:
     MONGODB_AVAILABLE = False
     print("Warning: pymongo not available. Using local storage only.")
+    
+    # Fallback encoder if MongoDB is not available
+    class MongoJSONEncoder(json.JSONEncoder):
+        pass
 
 # GPIO setup
 SENSOR_PIN = 17  # E18-D80NK signal
@@ -102,7 +115,7 @@ def write_json(file_path, data):
     temp_file = file_path + ".tmp"
     try:
         with open(temp_file, "w") as f:
-            json.dump(data, f, indent=4)
+            json.dump(data, f, indent=4, cls=MongoJSONEncoder)
         os.replace(temp_file, file_path)
     except IOError as e:
         print(f"Error writing JSON: {e}")
@@ -151,7 +164,7 @@ def save_to_local_json(entry):
             # Write back to file
             temp_file = JSON_FILE + ".tmp"
             with open(temp_file, "w") as f:
-                json.dump(existing_data, f, indent=2)
+                json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
             os.replace(temp_file, JSON_FILE)
             print(f"Data saved to local storage. Total records: {len(existing_data)}")
     except Exception as e:

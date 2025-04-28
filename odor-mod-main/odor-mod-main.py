@@ -5,6 +5,9 @@ import adafruit_dht
 import board
 import os
 import json
+import glob
+import subprocess
+import signal
 from datetime import datetime
 import pytz
 
@@ -12,14 +15,28 @@ import pytz
 client = None
 db = None
 collection = None
+ser = None  # Global serial connection
 
 try:
     from pymongo import MongoClient
     from pymongo.errors import ServerSelectionTimeoutError
+    from bson import ObjectId
     MONGODB_AVAILABLE = True
+    
+    # Create a custom JSON encoder to handle MongoDB ObjectId
+    class MongoJSONEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, ObjectId):
+                return str(obj)  # Convert ObjectId to string
+            return super().default(obj)
+            
 except ImportError:
     MONGODB_AVAILABLE = False
     print("Warning: pymongo not available. Using local storage only.")
+    
+    # Fallback encoder if MongoDB is not available
+    class MongoJSONEncoder(json.JSONEncoder):
+        pass
 
 # Prerequisites:
 # 1. Install dependencies from requirements.txt:
@@ -27,7 +44,7 @@ except ImportError:
 # 2. Install lgpio library:
 #    Run `sudo apt install python3-lgpio` for RPi-LGPIO.
 # 3. Connect hardware:
-#    - USB: Arduino Mega to Pi (/dev/ttyUSB0).
+#    - USB: Arduino Mega to Pi (/dev/ttyUSB*).
 #    - DHT22: TEMP1-TEMP4 on GPIO4,5,6,12.
 #    - 8RELAY-B: K2 (Exhaust Fan, GPIO23), K3 (Air Freshener, GPIO22).
 #    - Common GND (e.g., Pi Pin 6 to Arduino GND).
@@ -41,14 +58,93 @@ FRESHENER_PIN = 22  # GPIO22, Air Freshener (3.3V, <0.33W)
 lgpio.gpio_claim_output(h, FAN_PIN, 0)      # Active HIGH
 lgpio.gpio_claim_output(h, FRESHENER_PIN, 0)  # Active HIGH
 
-# Serial Setup for Arduino Mega
-SERIAL_PORT = "/dev/ttyUSB0"
+# Serial communication settings
 BAUD_RATE = 9600
-try:
-    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=2)
-except serial.SerialException as e:
-    print(f"Error opening serial port: {e}")
-    ser = None
+SERIAL_TIMEOUT = 2
+
+def find_arduino_serial_port():
+    """Scan for available serial ports and find Arduino Mega."""
+    global ser
+    
+    # Close any existing serial connection
+    if ser is not None:
+        try:
+            ser.close()
+        except Exception:
+            pass
+        ser = None
+    
+    # Find all available USB serial ports
+    ports = glob.glob('/dev/ttyUSB*')
+    if not ports:
+        ports = glob.glob('/dev/ttyACM*')  # Sometimes Arduino shows up as ACM
+    
+    if not ports:
+        print("No USB serial ports found.")
+        return None
+    
+    print(f"Found {len(ports)} potential serial ports: {ports}")
+    
+    # Try to release any busy ports using fuser
+    for port in ports:
+        try:
+            # Check if port is in use
+            result = subprocess.run(['fuser', port], capture_output=True, text=True)
+            if result.stdout.strip():
+                pids = result.stdout.strip().split()
+                for pid in pids:
+                    print(f"Port {port} is in use by process {pid}. Attempting to terminate...")
+                    try:
+                        os.kill(int(pid), signal.SIGKILL)
+                        print(f"Successfully terminated process {pid}")
+                        # Wait a moment for the port to be released
+                        time.sleep(1)
+                    except Exception as e:
+                        print(f"Failed to terminate process {pid}: {e}")
+        except Exception as e:
+            print(f"Error checking port usage: {e}")
+    
+    # Try each port to find Arduino Mega
+    for port in ports:
+        try:
+            print(f"Trying to connect to {port}...")
+            test_ser = serial.Serial(port, BAUD_RATE, timeout=SERIAL_TIMEOUT)
+            
+            # Wait for Arduino to initialize after connection
+            time.sleep(2)
+            
+            # Flush any initial data
+            test_ser.reset_input_buffer()
+            
+            # Wait for a valid reading (timeout after 5 attempts)
+            attempts = 5
+            while attempts > 0:
+                test_ser.write(b'r')  # Optional: send a request byte
+                line = test_ser.readline().decode('utf-8').strip()
+                print(f"Received: {line}")
+                
+                # Check if the data looks like our expected format (comma-separated values)
+                if ',' in line:
+                    try:
+                        values = line.split(',')
+                        if len(values) == 4:  # We expect 4 values from MQ135 sensors
+                            print(f"Arduino Mega found on {port}")
+                            ser = test_ser
+                            return port
+                    except Exception:
+                        pass
+                
+                attempts -= 1
+                time.sleep(0.5)
+            
+            # If we reach here, this port didn't work
+            test_ser.close()
+            
+        except Exception as e:
+            print(f"Failed to connect to {port}: {e}")
+    
+    print("No working Arduino connection found.")
+    return None
 
 # DHT22 Setup
 dht_pins = [board.D4, board.D5, board.D6, board.D12]  # GPIO4,5,6,12
@@ -164,7 +260,7 @@ def save_to_local_json(data):
         # Write back all data to file
         temp_file = LOCAL_FILE + ".tmp"
         with open(temp_file, "w") as f:
-            json.dump(existing_data, f, indent=2)
+            json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
         os.replace(temp_file, LOCAL_FILE)
         print(f"Data saved to local storage. Total records: {len(existing_data)}")
         return True
@@ -200,6 +296,15 @@ def log_data(aqi_values, dht_readings):
 
 def start_monitoring():
     """Start the continuous monitoring process."""
+    global ser
+    
+    # Ensure we have a serial connection
+    if ser is None:
+        port = find_arduino_serial_port()
+        if port is None:
+            print("Could not find Arduino Mega. Please check connection and try again.")
+            return
+    
     print("Odor Module Running...")
     print("Press CTRL+C to return to menu")
     try:
@@ -210,6 +315,12 @@ def start_monitoring():
             control_freshener(aqi_values)
             log_data(aqi_values, dht_readings)
             print(f"AQI: {aqi_values}, DHT: {[r['temp'] for r in dht_readings]}")
+            
+            # If we lose connection, try to reconnect
+            if sum(aqi_values) == 0:  # Likely no data is being received
+                print("No AQI data received. Attempting to reconnect...")
+                find_arduino_serial_port()
+            
             time.sleep(5)  # Update every 5 seconds
     except KeyboardInterrupt:
         print("\nMonitoring stopped. Returning to menu...")
@@ -248,4 +359,11 @@ def main():
             client.close()
 
 if __name__ == "__main__":
+    print("Initializing Odor Module...")
+    port = find_arduino_serial_port()
+    if port:
+        print(f"Successfully connected to Arduino Mega on {port}")
+    else:
+        print("Warning: Could not find Arduino Mega. Module will start but AQI readings may not work.")
+        print("Please check connections and restart if needed.")
     main()
