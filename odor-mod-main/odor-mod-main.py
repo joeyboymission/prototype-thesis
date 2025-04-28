@@ -145,11 +145,28 @@ def save_to_local_json(data):
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(LOCAL_FILE), exist_ok=True)
         
-        # Use JSON Lines format for efficiency
-        with open(LOCAL_FILE, 'a') as f:
-            json.dump(data, f)
-            f.write('\n')  # JSON Lines format
-        print(f"Data saved to local storage.")
+        # Check if the file exists and read existing data
+        existing_data = []
+        if os.path.exists(LOCAL_FILE):
+            try:
+                with open(LOCAL_FILE, "r") as f:
+                    existing_data = json.load(f)
+                print(f"Found existing data file with {len(existing_data)} records")
+            except json.JSONDecodeError:
+                print("Existing file found but couldn't be parsed. Creating new file.")
+                existing_data = []
+        else:
+            print(f"Creating new data file: {LOCAL_FILE}")
+        
+        # Append new data
+        existing_data.append(data)
+        
+        # Write back all data to file
+        temp_file = LOCAL_FILE + ".tmp"
+        with open(temp_file, "w") as f:
+            json.dump(existing_data, f, indent=2)
+        os.replace(temp_file, LOCAL_FILE)
+        print(f"Data saved to local storage. Total records: {len(existing_data)}")
         return True
     except Exception as e:
         print(f"Local logging error: {e}")

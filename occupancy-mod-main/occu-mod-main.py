@@ -137,8 +137,12 @@ def save_to_local_json(entry):
             try:
                 with open(JSON_FILE, "r") as f:
                     existing_data = json.load(f)
+                print(f"Found existing data file with {len(existing_data)} records")
             except json.JSONDecodeError:
+                print("Existing file found but couldn't be parsed. Creating new file.")
                 existing_data = []
+        else:
+            print(f"Creating new data file: {JSON_FILE}")
         
         # Append new entry if it has a visitor_id
         if "visitor_id" in entry:
@@ -147,9 +151,9 @@ def save_to_local_json(entry):
             # Write back to file
             temp_file = JSON_FILE + ".tmp"
             with open(temp_file, "w") as f:
-                json.dump(existing_data, f, indent=4)
+                json.dump(existing_data, f, indent=2)
             os.replace(temp_file, JSON_FILE)
-            print(f"Data saved to local storage.")
+            print(f"Data saved to local storage. Total records: {len(existing_data)}")
     except Exception as e:
         print(f"Error saving to local JSON: {e}")
 

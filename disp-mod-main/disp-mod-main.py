@@ -72,14 +72,21 @@ CALIBRATION_DATA = {
 # Function to save data to local JSON file
 def save_to_local_json(reading_doc):
     try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
+        
         # Read existing data
         existing_data = []
         if os.path.exists(JSON_FILE):
             try:
                 with open(JSON_FILE, "r") as f:
                     existing_data = json.load(f)
+                print(f"Found existing data file with {len(existing_data)} records")
             except json.JSONDecodeError:
+                print("Existing file found but couldn't be parsed. Creating new file.")
                 existing_data = []
+        else:
+            print(f"Creating new data file: {JSON_FILE}")
         
         # Append new reading
         existing_data.append(reading_doc)
@@ -87,9 +94,9 @@ def save_to_local_json(reading_doc):
         # Write back to file
         temp_file = JSON_FILE + ".tmp"
         with open(temp_file, "w") as f:
-            json.dump(existing_data, f, indent=4)
+            json.dump(existing_data, f, indent=2)
         os.replace(temp_file, JSON_FILE)
-        print(f"Data saved to local storage")
+        print(f"Data saved to local storage. Total records: {len(existing_data)}")
         return True
     except IOError as e:
         print(f"Error saving to local JSON: {e}")
