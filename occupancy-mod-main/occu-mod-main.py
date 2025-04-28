@@ -178,13 +178,25 @@ def load_initial_state(file_path):
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     
     data = read_json(file_path)
-    log_list = data.get("visitors", [])
+    
+    # Handle the case where data is a list (direct entries) instead of a dictionary with "visitors" key
+    if isinstance(data, list):
+        log_list = data
+        print("Loaded data in list format directly")
+    else:
+        log_list = data.get("visitors", [])
+        print("Loaded data in dictionary format with 'visitors' key")
+    
     if log_list:
-        visitor_count = max(entry["visitor_id"] for entry in log_list)
-        ongoing_visit = next((entry for entry in log_list if "end_time" not in entry), None)
-        if ongoing_visit:
-            current_state = STATE_OCCUPIED
-            current_start_time = float(ongoing_visit["start_time"])
+        try:
+            visitor_count = max(entry["visitor_id"] for entry in log_list)
+            ongoing_visit = next((entry for entry in log_list if "end_time" not in entry), None)
+            if ongoing_visit:
+                current_state = STATE_OCCUPIED
+                current_start_time = float(ongoing_visit["start_time"])
+        except (KeyError, ValueError) as e:
+            print(f"Error processing visitor data: {e}. Resetting visitor count.")
+            visitor_count = -1
     else:
         visitor_count = -1
 

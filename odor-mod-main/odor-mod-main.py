@@ -85,24 +85,45 @@ def find_arduino_serial_port():
     
     print(f"Found {len(ports)} potential serial ports: {ports}")
     
-    # Try to release any busy ports using fuser
+    # Try to release any busy ports using both fuser and systemctl restart commands
     for port in ports:
+        port_base = os.path.basename(port)
         try:
-            # Check if port is in use
-            result = subprocess.run(['fuser', port], capture_output=True, text=True)
+            # First attempt to restart the getty service for this port
+            try:
+                restart_cmd = f"sudo systemctl restart serial-getty@{port_base}.service"
+                print(f"Restarting serial service: {restart_cmd}")
+                subprocess.run(restart_cmd, shell=True, timeout=5)
+                time.sleep(1)  # Wait for the service to restart
+            except Exception as e:
+                print(f"Service restart attempt (non-critical): {e}")
+            
+            # Check if port is in use with fuser
+            result = subprocess.run(['sudo', 'fuser', port], capture_output=True, text=True)
             if result.stdout.strip():
                 pids = result.stdout.strip().split()
                 for pid in pids:
                     print(f"Port {port} is in use by process {pid}. Attempting to terminate...")
                     try:
-                        os.kill(int(pid), signal.SIGKILL)
+                        kill_cmd = f"sudo kill -9 {pid}"
+                        print(f"Running: {kill_cmd}")
+                        subprocess.run(kill_cmd, shell=True, timeout=5)
                         print(f"Successfully terminated process {pid}")
                         # Wait a moment for the port to be released
                         time.sleep(1)
                     except Exception as e:
                         print(f"Failed to terminate process {pid}: {e}")
+            
+            # Set permissions on the port to ensure we can access it
+            try:
+                subprocess.run(['sudo', 'chmod', '666', port], timeout=5)
+                print(f"Set permissions on {port} to 666 (read-write for everyone)")
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"Failed to set permissions: {e}")
+                
         except Exception as e:
-            print(f"Error checking port usage: {e}")
+            print(f"Error checking/managing port usage: {e}")
     
     # Try each port to find Arduino Mega
     for port in ports:
