@@ -2,36 +2,46 @@
 # Database Dependencies
 # ===========================================
 pymongo>=4.12.0
+bson>=0.5.10
 
 # ===========================================
-# GUI and System Dependencies
+# System and Utility Dependencies
 # ===========================================
-# Note: Tkinter comes with Python installation
-# For Linux: sudo apt-get install python3-tk
-# For Windows: Included with Python installer
 psutil>=5.9.0
+tabulate>=0.9.0
+python-dateutil>=2.9.0
+pytz>=2025.2
 
 # ===========================================
 # Hardware Interface Dependencies
 # ===========================================
-# DHT Sensor Libraries
+# GPIO and Hardware Control
+RPi.GPIO>=0.7.1
+lgpio>=0.6.0
+
+# Serial Communication for Arduino
+pyserial>=3.5
+
+# DHT22 Temperature/Humidity Sensors
 adafruit-circuitpython-dht>=4.0.7
 adafruit-blinka>=8.32.0
 
-# GPIO Libraries
-RPi-LGPIO>=0.6.0
+# ===========================================
+# Development and Testing
+# ===========================================
+pytest>=7.0.0
+pylint>=3.0.0
+black>=24.0.0
 
-# I2C Communication
-smbus2>=0.5.0
+# ===========================================
+# Installation Notes
+# ===========================================
+# 1. System requirements:
+#    - For GPIO: sudo apt install python3-lgpio
+#    - For DHT22: sudo apt install libgpiod2
 
-# Serial Communication
-pyserial>=3.5
+# 2. Run installation:
+#    pip3 install -r requirements.txt
 
-# Date/Time Libraries 
-pytz>=2025.2
-python-dateutil>=2.9.0
-
-# Development Tools
-pytest>=7.0.0  # For testing
-pylint>=3.0.0  # For code quality
-black>=24.0.0  # For code formatting
+# 3. Run with sudo:
+#    sudo python3 <module>-mod-main.py

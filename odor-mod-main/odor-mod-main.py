@@ -6,6 +6,7 @@ import time
 import json
 import datetime
 import psutil
+import collections  # Added missing collections import
 import adafruit_dht
 import RPi.GPIO as GPIO
 from tabulate import tabulate
@@ -464,7 +465,7 @@ def start_monitoring():
         lgpio.gpio_write(h, FRESHENER_PIN, 0)
 
 def main():
-    """Main CLI menu function."""
+    """Main CLI menu function.""" 
     try:
         while True:
             print("\n" + "="*80)
