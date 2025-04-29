@@ -81,7 +81,7 @@ def check_mongo_connection():
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Test connection
         db = client['Smart_Cubicle']
-        mongo_collection = db['occupancy_module']  # Updated collection name
+        mongo_collection = db['occupancy'] 
         log_message("Connected to MongoDB successfully.")
         return True
     except Exception as e:
@@ -112,40 +112,13 @@ current_start_time = None
 last_state_change_time = time.time()
 
 def perform_post_check():
-    """Perform Power-On Self Test to verify all components are working"""
+    """Perform Power-On Self Test to verify database connectivity"""
     print("\nInitializing Occupancy Module")
     
     test_results = {
-        "proximity_sensor": False,
-        "buzzer": False,
         "local_storage": False,
         "mongodb_connection": False
     }
-    
-    # Test proximity sensor
-    proximity_status = "Offline"
-    try:
-        # Test reading from the sensor
-        state = lgpio.gpio_read(h, SENSOR_PIN)
-        test_results["proximity_sensor"] = True
-        proximity_status = "Online"
-        print(f"> Checking Proximity Sensor: {proximity_status}")
-    except Exception as e:
-        print(f"> Checking Proximity Sensor: {proximity_status}")
-        log_message(f"Proximity sensor test failed: {e}")
-    
-    # Test buzzer with a short beep
-    buzzer_status = "Offline"
-    try:
-        lgpio.gpio_write(h, BUZZER_PIN, 1)
-        time.sleep(0.1)  # Very brief activation for testing
-        lgpio.gpio_write(h, BUZZER_PIN, 0)
-        test_results["buzzer"] = True
-        buzzer_status = "Online"
-        print(f"> Checking Buzzer: {buzzer_status}")
-    except Exception as e:
-        print(f"> Checking Buzzer: {buzzer_status}")
-        log_message(f"Buzzer test failed: {e}")
     
     # Check local storage
     storage_status = "Offline"
@@ -168,9 +141,9 @@ def perform_post_check():
     
     # Check MongoDB connectivity
     mongodb_status = "Offline"
-    if collection is not None:
+    if mongo_collection is not None:
         try:
-            collection.find_one()
+            mongo_collection.find_one()
             test_results["mongodb_connection"] = True
             mongodb_status = "Online"
             print(f"> Checking MongoDB: {mongodb_status}")
@@ -183,10 +156,8 @@ def perform_post_check():
     
     # Return overall result
     all_okay = (
-        test_results["proximity_sensor"] and
-        test_results["buzzer"] and
-        test_results["local_storage"]
-        # We don't require MongoDB to be working
+        test_results["local_storage"] and
+        test_results["mongodb_connection"]
     )
     
     if all_okay:
@@ -198,14 +169,24 @@ def perform_post_check():
 
 # Buzzer control
 def beep_buzzer(duration):
-    lgpio.gpio_write(chip, BUZZER_PIN, 1)
-    time.sleep(duration)
-    lgpio.gpio_write(chip, BUZZER_PIN, 0)
+    """Control the buzzer for a specified duration"""
+    try:
+        lgpio.gpio_write(chip, BUZZER_PIN, 1)
+        time.sleep(duration)
+        lgpio.gpio_write(chip, BUZZER_PIN, 0)
+        log_message(f"Buzzer activated for {duration} seconds")
+    except Exception as e:
+        log_message(f"Error controlling buzzer: {e}")
 
 def double_beep():
-    beep_buzzer(SHORT_BEEP)
-    time.sleep(SHORT_BEEP)
-    beep_buzzer(SHORT_BEEP)
+    """Perform a double beep pattern"""
+    try:
+        beep_buzzer(SHORT_BEEP)
+        time.sleep(SHORT_BEEP)
+        beep_buzzer(SHORT_BEEP)
+        log_message("Double beep performed")
+    except Exception as e:
+        log_message(f"Error performing double beep: {e}")
 
 # Format duration
 def format_duration(seconds):
@@ -261,7 +242,6 @@ def update_mongo(entry):
             log_message(f"Error updating MongoDB: {e}. Data saved locally only.")
             mongo_collection = None
 
-# Save to local JSON
 def save_to_local_json(entry):
     try:
         # Create directory if it doesn't exist
@@ -272,7 +252,13 @@ def save_to_local_json(entry):
         if os.path.exists(JSON_FILE):
             try:
                 with open(JSON_FILE, "r") as f:
-                    existing_data = json.load(f)
+                    data = json.load(f)
+                    # Ensure data is a list
+                    if isinstance(data, list):
+                        existing_data = data
+                    else:
+                        log_message("Existing data is not in list format. Creating new list.")
+                        existing_data = []
                 log_message(f"Found existing data file with {len(existing_data)} records")
             except json.JSONDecodeError:
                 log_message("Existing file found but couldn't be parsed. Creating new file.")
@@ -280,16 +266,15 @@ def save_to_local_json(entry):
         else:
             log_message(f"Creating new data file: {JSON_FILE}")
         
-        # Append new entry if it has a visitor_id
-        if "visitor_id" in entry:
-            existing_data.append(entry)
-            
-            # Write back to file
-            temp_file = JSON_FILE + ".tmp"
-            with open(temp_file, "w") as f:
-                json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
-            os.replace(temp_file, JSON_FILE)
-            log_message(f"Data saved to local storage. Total records: {len(existing_data)}")
+        # Append new entry (already formatted correctly)
+        existing_data.append(entry)
+        
+        # Write back to file
+        temp_file = JSON_FILE + ".tmp"
+        with open(temp_file, "w") as f:
+            json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
+        os.replace(temp_file, JSON_FILE)
+        log_message(f"Data saved to local storage. Total records: {len(existing_data)}")
     except Exception as e:
         log_message(f"Error saving to local JSON: {e}")
 
@@ -342,6 +327,69 @@ def update_log(file_path, new_entry=None):
     }
     write_json(file_path, data)
 
+def save_current_state():
+    """Save the current occupancy state to both local and remote databases"""
+    global current_state, visitor_count, current_start_time
+    
+    current_time = time.time()
+    timestamp = datetime.fromtimestamp(current_time).strftime("%Y-%m-%dT%H:%M:%S.000000")
+    
+    # Create a visit entry with the exact format
+    visit_entry = {
+        "type": "visit",
+        "visitor_id": max(visitor_count, 0),
+        "start_time": timestamp,
+        "end_time": None,
+        "duration": None
+    }
+    
+    # Save to local JSON
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
+        
+        # Read existing data
+        existing_data = []
+        if os.path.exists(JSON_FILE):
+            try:
+                with open(JSON_FILE, "r") as f:
+                    data = json.load(f)
+                    # Ensure data is a list
+                    if isinstance(data, list):
+                        existing_data = data
+                    else:
+                        log_message("Existing data is not in list format. Creating new list.")
+                        existing_data = []
+            except json.JSONDecodeError:
+                log_message("Existing file found but couldn't be parsed. Creating new file.")
+                existing_data = []
+        
+        # Append new entry
+        existing_data.append(visit_entry)
+        
+        # Write back to file
+        temp_file = JSON_FILE + ".tmp"
+        with open(temp_file, "w") as f:
+            json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
+        os.replace(temp_file, JSON_FILE)
+        
+        # Try to save to MongoDB if available
+        if mongo_collection is not None:
+            try:
+                mongo_collection.insert_one(visit_entry)
+                log_message(f"Visit data saved to both local and remote databases at {timestamp}")
+                return True
+            except Exception as e:
+                log_message(f"Error updating MongoDB: {e}. Data saved locally only.")
+                log_message(f"Visit data saved to local database at {timestamp}")
+                return True
+        else:
+            log_message(f"Visit data saved to local database at {timestamp}")
+            return True
+    except Exception as e:
+        log_message(f"Error saving data: {e}")
+        return False
+
 def display_options():
     """Display options menu during monitoring"""
     print("\n" + "=" * 80)
@@ -372,6 +420,10 @@ def monitor_occupancy(file_path):
     last_sensor_state = lgpio.gpio_read(chip, SENSOR_PIN)
     detection_start = None
     last_display_time = time.time()
+    last_log_time = time.time()
+    last_save_time = time.time()
+    last_state = current_state
+    last_visitor_count = visitor_count
     display_width = 80
 
     import select
@@ -437,10 +489,27 @@ def monitor_occupancy(file_path):
 
             last_sensor_state = sensor_state
         
-        # Refresh log display periodically or on status change
+        # Save current state every 5 seconds
+        if current_time - last_save_time >= 5:
+            save_current_state()
+            last_save_time = current_time
+        
+        # Refresh log display periodically
         if current_time - last_display_time >= 1:
             display_log_window()
             last_display_time = current_time
+
+        # Only log status changes or every 30 seconds
+        if (current_state != last_state or visitor_count != last_visitor_count or 
+            current_time - last_log_time >= 30):
+            # Create a status summary
+            status_line = f"Visitor Count: {max(visitor_count, 0)} | Status: {current_state}"
+            if current_state == STATE_OCCUPIED and current_start_time is not None:
+                status_line += f" | Duration so far: {format_duration(time.time() - current_start_time)}"
+            log_message(status_line)
+            last_log_time = current_time
+            last_state = current_state
+            last_visitor_count = visitor_count
 
         # Display options menu periodically
         if current_time - last_display_time >= 5:

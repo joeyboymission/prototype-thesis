@@ -1,17 +1,8 @@
 {
-    "occupancy_module_format": {
-        "_id": "ObjectId()",
-        "type": "visit",
-        "visitor_id": 0,
-        "start_time": "YYYY-MM-DDThh:mm:ss.000000",
-        "end_time": "YYYY-MM-DDThh:mm:ss.000000",
-        "duration": 0
-    },
-    "data_ranges": {
-        "type": "string (always 'visit')",
-        "visitor_id": "integer (1+)",
-        "start_time": "ISO format with microseconds",
-        "end_time": "ISO format with microseconds",
-        "duration": "integer (seconds)"
-    }
+    "_id": "ObjectId('6810534ffff6d2ea8332538a')",
+    "type": "visit",
+    "visitor_id": 1,
+    "start_time": "2025-04-29T06:00:00.000000",
+    "end_time": "2025-04-29T06:08:59.000000",
+    "duration": 539
 }
