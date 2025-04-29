@@ -37,10 +37,18 @@ DATA_DIR = "/home/admin/Documents/local-data"
 JSON_FILE = os.path.join(DATA_DIR, "dispenser-data.json")
 os.makedirs(DATA_DIR, exist_ok=True)  # Create directory if it doesn't exist
 
+def get_timestamp():
+    """Return formatted timestamp string [YYYY-MM-DD HH:MM:SS]"""
+    return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+
+def log_message(message):
+    """Print a message with timestamp"""
+    print(f"{get_timestamp()} {message}")
+
 def check_mongo_connection():
     global client, db, collection
     if not MONGODB_AVAILABLE:
-        print("MongoDB support not available, using local storage only.")
+        log_message("MongoDB support not available, using local storage only.")
         return False
         
     try:
@@ -48,10 +56,10 @@ def check_mongo_connection():
         client.admin.command('ping')  # Test connection
         db = client['Smart_Cubicle']
         collection = db['dispenser_resource']
-        print("Connected to MongoDB successfully.")
+        log_message("Connected to MongoDB successfully.")
         return True
     except Exception as e:
-        print(f"Warning: Failed to connect to MongoDB: {e}. Falling back to local JSON.")
+        log_message(f"Warning: Failed to connect to MongoDB: {e}. Falling back to local JSON.")
         client = None
         db = None
         collection = None
@@ -82,6 +90,75 @@ CALIBRATION_DATA = {
     "CONT4": {"full": 2.91, "empty": 12.88}
 }
 
+# Significant change threshold in mL (to avoid saving unnecessary data)
+SIGNIFICANT_CHANGE_THRESHOLD = 10.0
+
+def perform_post_check():
+    """Perform Power-On Self Test to verify all components are working"""
+    log_message("Starting POST (Power-On Self Test) for Dispenser Module")
+    test_results = {
+        "ultrasonic_sensors": [False] * 4,
+        "local_storage": False,
+        "mongodb_connection": False
+    }
+    
+    # Test ultrasonic sensors
+    for i in range(4):
+        container = f"CONT{i+1}"
+        trigger = triggers[i]
+        echo = echos[i]
+        
+        try:
+            # Try a test measurement
+            _, distance = measure_raw_data(trigger, echo, num_measurements=2)
+            if distance is not None:
+                volume = calculate_usable_volume(container, distance)
+                test_results["ultrasonic_sensors"][i] = True
+                log_message(f"✓ Ultrasonic sensor {container} working: Distance = {distance:.2f} cm, Volume = {volume:.2f} mL")
+            else:
+                log_message(f"✗ Ultrasonic sensor {container} not reading properly")
+        except Exception as e:
+            log_message(f"✗ Ultrasonic sensor {container} test failed: {e}")
+    
+    # Check local storage
+    try:
+        os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
+        existing_data = []
+        if os.path.exists(JSON_FILE):
+            with open(JSON_FILE, 'r') as f:
+                existing_data = json.load(f)
+            log_message(f"✓ Local storage accessible with {len(existing_data)} existing records")
+        else:
+            log_message("✓ Local storage accessible (no existing data file)")
+        test_results["local_storage"] = True
+    except Exception as e:
+        log_message(f"✗ Local storage test failed: {e}")
+    
+    # Check MongoDB connectivity
+    if collection is not None:
+        try:
+            collection.find_one()
+            test_results["mongodb_connection"] = True
+            log_message("✓ MongoDB connection active")
+        except Exception as e:
+            log_message(f"✗ MongoDB connection test failed: {e}")
+    else:
+        log_message("✗ MongoDB not connected, using local storage only")
+    
+    # Return overall result
+    all_okay = (
+        any(test_results["ultrasonic_sensors"]) and  # At least one sensor working
+        test_results["local_storage"]
+        # We don't require MongoDB to be working
+    )
+    
+    if all_okay:
+        log_message("POST completed successfully. All essential systems operational.")
+    else:
+        log_message("POST completed with errors. Some systems may not function properly.")
+    
+    return all_okay
+
 # Function to save data to local JSON file
 def save_to_local_json(reading_doc):
     try:
@@ -94,12 +171,12 @@ def save_to_local_json(reading_doc):
             try:
                 with open(JSON_FILE, "r") as f:
                     existing_data = json.load(f)
-                print(f"Found existing data file with {len(existing_data)} records")
+                log_message(f"Found existing data file with {len(existing_data)} records")
             except json.JSONDecodeError:
-                print("Existing file found but couldn't be parsed. Creating new file.")
+                log_message("Existing file found but couldn't be parsed. Creating new file.")
                 existing_data = []
         else:
-            print(f"Creating new data file: {JSON_FILE}")
+            log_message(f"Creating new data file: {JSON_FILE}")
         
         # Append new reading
         existing_data.append(reading_doc)
@@ -109,10 +186,10 @@ def save_to_local_json(reading_doc):
         with open(temp_file, "w") as f:
             json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
         os.replace(temp_file, JSON_FILE)
-        print(f"Data saved to local storage. Total records: {len(existing_data)}")
+        log_message(f"Data saved to local storage. Total records: {len(existing_data)}")
         return True
     except IOError as e:
-        print(f"Error saving to local JSON: {e}")
+        log_message(f"Error saving to local JSON: {e}")
         return False
 
 # Function to measure raw data and distance
@@ -179,30 +256,54 @@ def save_data(reading_doc):
     if collection is not None:
         try:
             collection.insert_one(reading_doc)
-            print(f"Data also saved to MongoDB")
+            log_message(f"Data also saved to MongoDB")
             return True
         except Exception as e:
-            print(f"Error saving to MongoDB: {e}. Data saved locally only.")
+            log_message(f"Error saving to MongoDB: {e}. Data saved locally only.")
             collection = None
             client = None
             return True
     return True
+
+def display_options():
+    """Display options menu during monitoring"""
+    print("\n" + "=" * 80)
+    print("Options:")
+    print("1. Refresh Data Log Now")
+    print("2. Return to Main Menu")
+    print("=" * 80)
+    print("\nAuto-refresh in 5 seconds...")
 
 # Main monitoring function
 def start_monitoring():
     reading_count = 0
     previous_volumes = {}
     delay_between_readings = 5  # seconds between readings
+    last_saved_volumes = {}  # To track when significant changes occur
+    last_display_time = time.time()
+    display_width = 80
     
-    print("Dispenser Module - Liquid Level Monitoring")
-    print("Press CTRL+C to return to menu\n")
+    # Run POST check
+    perform_post_check()
+    
+    log_message("Dispenser Module - Liquid Level Monitoring")
+    log_message("Press CTRL+C to return to menu\n")
+    
+    # Set up non-blocking input
+    import select
+    import sys
     
     try:
         while True:
+            current_time = time.time()
             reading_count += 1
             current_reading = {}
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"\nReading {reading_count} ({timestamp})")
+            significant_change_detected = False
+            
+            # Format for display line
+            status_items = []
+            status_items.append(f"{get_timestamp()} Reading {reading_count}")
             
             for i in range(4):
                 container = f"CONT{i+1}"
@@ -211,11 +312,12 @@ def start_monitoring():
                 
                 pulse_duration, distance = measure_raw_data(trigger, echo)
                 if pulse_duration is None or distance is None:
-                    print(f"{container}: Measurement failed (timeout or error)")
+                    log_message(f"{container}: Measurement failed (timeout or error)")
                     current_reading[container] = {
                         "distance_cm": None,
                         "remaining_volume_ml": None
                     }
+                    status_items.append(f"{container}: Error")
                 else:
                     volume = calculate_usable_volume(container, distance)
                     amount_used = None
@@ -224,40 +326,85 @@ def start_monitoring():
                         if amount_used < 0:
                             amount_used = 0
                     
-                    print(f"{container}: Pulse Duration = {pulse_duration:.6f} s, Distance = {distance} cm, Remaining Volume = {volume if volume is not None else 'N/A'} mL", end="")
-                    if amount_used is not None:
-                        print(f", Amount Used: {amount_used} mL")
-                    else:
-                        print()
+                    # Check if this is a significant change from last saved value
+                    if (container not in last_saved_volumes or 
+                        last_saved_volumes[container] is None or 
+                        volume is None or
+                        abs(volume - last_saved_volumes.get(container, 0)) >= SIGNIFICANT_CHANGE_THRESHOLD):
+                        significant_change_detected = True
+                        last_saved_volumes[container] = volume
+                    
+                    # Add to status items with 2 decimal places
+                    status_items.append(f"{container}: {volume:.2f} mL")
+                    if amount_used is not None and amount_used > 0:
+                        status_items.append(f"Used: {amount_used:.2f} mL")
                     
                     current_reading[container] = {
-                        "distance_cm": distance,
-                        "remaining_volume_ml": volume
+                        "distance_cm": round(distance, 2),  # Round to 2 decimal places
+                        "remaining_volume_ml": round(volume, 2) if volume is not None else None
                     }
                 
                 previous_volumes[container] = volume
             
-            # Save to both MongoDB and local storage
-            reading_doc = {
-                "reading": reading_count,
-                "timestamp": timestamp,
-                "data": current_reading
-            }
-            save_data(reading_doc)
+            # Create status line
+            status_line = " | ".join(status_items)
+            
+            # Truncate if too long
+            if len(status_line) > display_width:
+                status_line = status_line[:display_width-3] + "..."
+                
+            # Print status to console
+            print(status_line)
+            
+            # Only save data if a significant change is detected
+            if significant_change_detected:
+                reading_doc = {
+                    "reading": reading_count,
+                    "timestamp": timestamp,
+                    "data": current_reading
+                }
+                save_data(reading_doc)
+                log_message("Significant change detected - Data saved")
+            
+            # Display options menu periodically
+            if current_time - last_display_time >= 5:
+                display_options()
+                last_display_time = current_time
+            
+            # Check for keyboard input (non-blocking)
+            if select.select([sys.stdin], [], [], 0)[0]:
+                choice = sys.stdin.readline().strip()
+                if choice == "1":
+                    log_message("Manual refresh triggered")
+                    last_display_time = current_time
+                    # Force save on manual refresh
+                    reading_doc = {
+                        "reading": reading_count,
+                        "timestamp": timestamp,
+                        "data": current_reading,
+                        "manual_refresh": True
+                    }
+                    save_data(reading_doc)
+                elif choice == "2":
+                    log_message("Returning to main menu...")
+                    break
             
             # Wait for specified time before next reading
             time.sleep(delay_between_readings)
             
     except KeyboardInterrupt:
-        print("\nMonitoring stopped. Returning to menu...")
+        log_message("\nMonitoring stopped. Returning to menu...")
 
 def main():
     """Main CLI menu function."""
     try:
         while True:
-            print("\n" + "="*50)
-            print("Dispenser Module")
-            print("="*50)
+            print("\n" + "="*80)
+            print("╔═══════════════════════════════════════════════════╗")
+            print("║              SMART RESTROOM SYSTEM                ║")
+            print("║                DISPENSER MODULE                   ║")
+            print("╚═══════════════════════════════════════════════════╝")
+            print("="*80)
             print("1. Start the Module")
             print("2. Exit the Program")
             
@@ -266,12 +413,12 @@ def main():
             if choice == "1":
                 start_monitoring()
             elif choice == "2":
-                print("Exiting program...")
+                log_message("Exiting program...")
                 break
             else:
                 print("Invalid choice. Please select 1 or 2.")
     except Exception as e:
-        print(f"\nAn error occurred: {e}")
+        log_message(f"\nAn error occurred: {e}")
     finally:
         # Cleanup GPIO pins and close chip
         for pin in triggers + echos:
@@ -281,4 +428,5 @@ def main():
             client.close()
 
 if __name__ == "__main__":
+    log_message("Initializing Dispenser Module...")
     main()
