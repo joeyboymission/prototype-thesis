@@ -15,30 +15,81 @@ from tabulate import tabulate
 SIMULATION_INTERVAL = 5  # seconds between simulated data updates
 DATA_DIR = "./data/debug"
 
+# Custom debug handler to capture debug messages
+class DebugHandler:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(DebugHandler, cls).__new__(cls)
+            cls._instance.messages = []
+            cls._instance.enabled = True
+        return cls._instance
+    
+    def log(self, message):
+        """Add a message to the debug log"""
+        if self.enabled:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.messages.append(f"[{timestamp}] {message}")
+            if len(self.messages) > 100:  # Keep last 100 messages
+                self.messages.pop(0)
+    
+    def disable(self):
+        """Disable debug logging"""
+        self.enabled = False
+    
+    def enable(self):
+        """Enable debug logging"""
+        self.enabled = True
+    
+    def get_messages(self):
+        """Get all debug messages"""
+        return self.messages
+    
+    def clear(self):
+        """Clear all debug messages"""
+        self.messages.clear()
+
+# Create a global instance
+debug_handler = DebugHandler()
+
+# Override the built-in print function for debug messages
+original_print = print
+def debug_print(*args, **kwargs):
+    message = " ".join(map(str, args))
+    if message.startswith("[DEBUG]"):
+        debug_handler.log(message[8:].strip())  # Remove "[DEBUG]" prefix and strip whitespace
+    else:
+        original_print(*args, **kwargs)
+
+# Replace the built-in print with our custom function
+print = debug_print
+
+
 # Mock classes to replace hardware-dependent libraries
 class MockLGPIO:
     def gpiochip_open(self, chip):
-        print(f"[DEBUG] GPIO chip {chip} opened")
+        debug_handler.log(f"GPIO chip {chip} opened")
         return chip
     
     def gpiochip_close(self, handle):
-        print(f"[DEBUG] GPIO chip {handle} closed")
+        debug_handler.log(f"GPIO chip {handle} closed")
     
     def gpio_claim_output(self, handle, pin):
-        print(f"[DEBUG] GPIO pin {pin} claimed as output")
+        debug_handler.log(f"GPIO pin {pin} claimed as output")
     
     def gpio_claim_input(self, handle, pin, pull=None):
-        print(f"[DEBUG] GPIO pin {pin} claimed as input with pull={pull}")
+        debug_handler.log(f"GPIO pin {pin} claimed as input with pull={pull}")
     
     def gpio_write(self, handle, pin, value):
-        print(f"[DEBUG] GPIO pin {pin} set to {value}")
+        debug_handler.log(f"GPIO pin {pin} set to {value}")
     
     def gpio_read(self, handle, pin):
         # Simulate random sensor readings
         return random.choice([0, 1])
     
     def gpio_free(self, handle, pin):
-        print(f"[DEBUG] GPIO pin {pin} freed")
+        debug_handler.log(f"GPIO pin {pin} freed")
     
     # Constants to simulate pull-up resistors
     SET_PULL_UP = 1
@@ -93,7 +144,7 @@ class MockDB:
         self.name = name
     
     def __getitem__(self, collection_name):
-        print(f"[DEBUG] Accessing collection: {collection_name}")
+        debug_handler.log(f"Accessing collection: {collection_name}")
         return MockCollection(collection_name)
 
 
@@ -233,6 +284,7 @@ class OccupancyModule(ModuleBase):
         print("[DEBUG] Double beep")
     
     def format_duration(self, seconds):
+        """Format seconds into a readable duration string"""
         minutes = int(seconds // 60)
         secs = int(seconds % 60)
         return f"{minutes}min {secs}sec"
@@ -774,9 +826,13 @@ class CentralHub:
 
 # CLI Application
 class SmartRestroomDebugCLI:
+    instance = None  # Class variable to hold the single instance
+    
     def __init__(self):
+        SmartRestroomDebugCLI.instance = self  # Assigning the instance to the class variable
         self.running = True
         self.central_hub = CentralHub()
+        self.modules_running = False
         
         print("[DEBUG MODE] Starting Smart Restroom System in simulation mode")
         print("This debug version simulates hardware interactions for testing on Windows")
@@ -795,14 +851,23 @@ class SmartRestroomDebugCLI:
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
     
+    def clear_screen(self):
+        """Clear the console screen"""
+        os.system('cls' if os.name == 'nt' else 'clear')
+    
     def signal_handler(self, sig, frame):
-        print("\nShutting down Smart Restroom System...")
+        """Handle signals for graceful shutdown"""
+        print("\nShutting down...")
+        self.running = False
         self.cleanup()
         sys.exit(0)
     
-    def clear_screen(self):
-        """Clear the terminal screen"""
-        os.system('cls' if os.name == 'nt' else 'clear')
+    def cleanup(self):
+        """Cleanup resources before exit"""
+        self.occupancy_module.cleanup_hardware()
+        self.dispenser_module.cleanup_hardware()
+        self.odor_module.cleanup_hardware()
+        print("Cleanup complete. Exiting...")
     
     def print_header(self):
         """Print application header"""
@@ -812,196 +877,139 @@ class SmartRestroomDebugCLI:
         print("=" * 80)
         print(" ")
         print("[SIMULATION MODE - Hardware actions are simulated]")
-        print(" ")
-    
-    def print_system_status(self):
-        """Print system status information"""
-        print("\n=== SYSTEM STATUS ===\n")
         
-        # Update system info
-        sys_info = self.central_hub.update_system_info()
-        rpi = sys_info["raspberry_pi"]
-        arduino = sys_info["arduino"]
-        
-        # Print Raspberry Pi info
-        print("Raspberry Pi (Simulated):")
-        print(f"  Status      : {rpi['status']}")
-        print(f"  CPU Temp    : {rpi['cpu_temp']:.1f}°C")
-        print(f"  CPU Usage   : {rpi['cpu_usage']:.1f}%")
-        print(f"  Memory Usage: {rpi['memory_usage']:.1f}%")
-        print(f"  Storage     : {rpi['storage_usage']:.1f}%")
-        
-        # Print Arduino info
-        print("\nArduino (Simulated):")
-        print(f"  Status      : {arduino['status']}")
-        print(f"  CPU Temp    : {arduino['cpu_temp']:.1f}°C")
-        print(f"  CPU Usage   : {arduino['cpu_usage']:.1f}%")
-        print(f"  Memory Usage: {arduino['memory_usage']:.1f}%")
-        
-        # Print modules status
+        # Check if any module is running to determine system status
         modules_status = self.central_hub.get_modules_status()
-        print("\nModules Status:")
-        for module, status in modules_status.items():
-            print(f"  {module.capitalize()} Module: {status.upper()}")
+        any_module_running = any(status == "running" for status in modules_status.values())
+        status_color = "\033[1;32m" if any_module_running else "\033[1;31m"  # Green for online, red for offline
+        reset_color = "\033[0m"
+        status_text = "ONLINE" if any_module_running else "OFFLINE"
+        print(f"\nSystem Status: {status_color}{status_text}{reset_color}")
+        
+        # Display individual module statuses
+        for module_name, status in modules_status.items():
+            module_status = "ONLINE" if status == "running" else "OFFLINE"
+            module_color = "\033[1;32m" if status == "running" else "\033[1;31m"  # Green for online, red for offline
+            print(f"{module_name.capitalize()}: {module_color}{module_status}{reset_color}")
+        
+        print("")
     
-    def print_occupancy_status(self):
-        """Print occupancy module status"""
-        running = self.occupancy_module.running
-        status_text = "" if running else " (NOT RUNNING)"
+    def view_data_log(self):
+        """Display real-time data from all running modules"""
+        refresh_interval = 5
         
-        print(f"\n=== OCCUPANCY MODULE{status_text} ===\n")
-        
-        if running:
-            summary = self.occupancy_module.get_summary()
+        while True:
+            self.clear_screen()
+            print("=" * 80)
+            print(" " * 30 + "DATA LOG VIEW")
+            print("=" * 80)
+            print("\nModule Data:")
+            print("-" * 80)
             
-            # Bold status with color
-            status_color = "\033[1;31m" if summary["status"] == "Occupied" else "\033[1;32m"
-            reset_color = "\033[0m"
-            print(f"Status: {status_color}{summary['status']}{reset_color}")
+            # Display Occupancy Data
+            if self.occupancy_module.running:
+                occupancy_data = self.occupancy_module.get_summary()
+                print("\nOccupancy Module:")
+                print(f"Status: {occupancy_data['status']}")
+                print(f"Total Visitors: {occupancy_data['total_visitors']}")
+                print(f"Average Duration: {occupancy_data['avg_duration']}")
+                print(f"Current Duration: {occupancy_data['current_duration']}")
             
-            # Visitor stats
-            print(f"Total Visitors   : {summary['total_visitors']}")
-            print(f"Average Duration : {summary['avg_duration']}")
-            print(f"Current Duration : {summary['current_duration']}")
-            print(f"Sensor State     : {summary['sensor_state']}")
-        else:
-            # Display default values when not running
-            print("Sensor Status    : DOWN")
-            print("Total Visitors   : -")
-            print("Recent Duration  : -")
-            print("Average Duration : -")
-    
-    def print_dispenser_status(self):
-        """Print dispenser module status"""
-        running = self.dispenser_module.running
-        status_text = "" if running else " (NOT RUNNING)"
-        
-        print(f"\n=== DISPENSER MODULE{status_text} ===\n")
-        
-        if running:
-            container_data = self.dispenser_module.get_container_summary()
+            # Display Dispenser Data
+            if self.dispenser_module.running:
+                dispenser_data = self.dispenser_module.get_container_summary()
+                print("\nDispenser Module:")
+                headers = ["Container", "Volume (mL)", "Last Used"]
+                table = []
+                for cont_id, data in dispenser_data.items():
+                    table.append([
+                        cont_id,
+                        f"{data['remaining_volume_ml']:.1f}",
+                        f"{data['last_volume_change']} mL"
+                    ])
+                print(tabulate(table, headers=headers, tablefmt="grid"))
             
-            # Create table header
-            headers = ["Container", "Volume (mL)", "Percentage", "Sensor", "Last Used"]
-            table = []
+            # Display Odor Data
+            if self.odor_module.running:
+                odor_data = self.odor_module.get_sensor_summary()
+                print("\nOdor Module:")
+                print(f"Average Temperature: {odor_data['avg_temp']:.1f}°C")
+                print(f"Average Humidity: {odor_data['avg_hum']:.1f}%")
+                print(f"Average AQI: {odor_data['avg_aqi']:.1f}")
+                print(f"Fan Status: {odor_data['fan_status']}")
+                print(f"Freshener Status: {odor_data['freshener_status']}")
             
-            # Add data for each container
-            for i, (container, data) in enumerate(container_data.items(), 1):
-                volume = data["remaining_volume_ml"]
-                percentage = int((volume / 425) * 100) if volume is not None else 0
-                status = data["sensor_state"]
-                last_used = f"{data['last_volume_change']} mL"
+            # Display debug messages
+            debug_messages = debug_handler.get_messages()
+            if debug_messages:
+                print("\nRecent Events:")
+                print("-" * 80)
+                for msg in debug_messages[-20:]:  # Show last 20 messages
+                    print(msg)
+            
+            print("\n" + "=" * 40)
+            print("Options:")
+            print("1. Refresh Data Log Now")
+            print("2. Return to Main Menu")
+            print("=" * 40)
+            
+            print(f"\nAuto-refresh in {refresh_interval} seconds...")
+            
+            # Handle input with timeout
+            if os.name == 'nt':
+                import msvcrt
+                start_time = time.time()
+                choice = ''
                 
-                table.append([f"Container {i}", 
-                             f"{volume if volume is not None else 'N/A'}", 
-                             f"{percentage}%", 
-                             status, 
-                             last_used])
+                while time.time() - start_time < refresh_interval:
+                    if msvcrt.kbhit():
+                        char = msvcrt.getch().decode('utf-8')
+                        if char in ['1', '2']:
+                            choice = char
+                            print(char)
+                            break
+                    time.sleep(0.1)
+            else:
+                import select
+                i, _, _ = select.select([sys.stdin], [], [], refresh_interval)
+                choice = sys.stdin.readline().strip() if i else ""
             
-            print(tabulate(table, headers, tablefmt="grid"))
-        else:
-            # Display detailed container information when not running
-            container_types = ["Soap", "Hand Sanitizer", "Lotion", "Alcohol"]
-            
-            for i in range(1, 5):
-                print(f"Container {i}")
-                print(f"Status  : DOWN")
-                print(f"Volume  : -")
-                print(f"Type    : {container_types[i-1]}")
-                print(f"Last Used: -")
-                print(f"Recent  : -")
-                print()
-    
-    def print_odor_status(self):
-        """Print odor module status"""
-        running = self.odor_module.running
-        status_text = "" if running else " (NOT RUNNING)"
-        
-        print(f"\n=== ODOR MODULE{status_text} ===\n")
-        
-        if running:
-            summary = self.odor_module.get_sensor_summary()
-            
-            # Display averages
-            print(f"Average Temperature: {summary['avg_temp']:.1f}°C")
-            print(f"Average Humidity   : {summary['avg_hum']:.1f}%")
-            print(f"Average AQI        : {summary['avg_aqi']:.1f}")
-            print(f"AQI Trend          : {summary['trend'].upper()}")
-            print(f"Fan Status         : {summary['fan_status']}")
-            print(f"Freshener Status   : {summary['freshener_status']}")
-            print(f"Occupancy          : {summary['occupancy']}")
-            
-            # Create table for sensor values
-            headers = ["Sensor", "Temperature", "Humidity", "AQI", "Temp Sensor", "Gas Sensor"]
-            table = []
-            
-            for i in range(1, 5):
-                sensor = summary["sensors"][f"sensor_{i}"]
-                table.append([
-                    f"Sensor {i}",
-                    f"{sensor['temperature']:.1f}°C",
-                    f"{sensor['humidity']:.1f}%",
-                    f"{sensor['aqi']}",
-                    sensor['temp_status'],
-                    sensor['gas_status']
-                ])
-            
-            print("\nSensor Readings:")
-            print(tabulate(table, headers, tablefmt="grid"))
-        else:
-            # Display detailed sensor information when not running
-            for i in range(1, 5):
-                print(f"Sensor {i}")
-                print("GAS")
-                print("Status: DOWN")
-                print("AQI   : -")
-                print()
-                print("TEMP")
-                print("Status   : DOWN")
-                print("Temp     : -")
-                print("Humidity : -")
-                print()
-    
-    def display_dashboard(self):
-        """Display system dashboard"""
-        while self.running:
-            self.print_header()
-            self.print_system_status()
-            self.print_occupancy_status()
-            self.print_dispenser_status()
-            self.print_odor_status()
-            
-            print("\nPress Ctrl+C to access main menu")
-            try:
-                time.sleep(5)  # Update every 5 seconds
-            except KeyboardInterrupt:
+            if choice == '2':
                 break
     
     def start_all_modules(self):
-        """Start all modules"""
+        """Start all modules and update menu state"""
         print("\nStarting all modules...")
         self.occupancy_module.start()
         self.dispenser_module.start()
         self.odor_module.start()
-        input("\nPress Enter to continue...")
+        self.modules_running = True
+        time.sleep(1)  # Give modules time to initialize
     
     def stop_all_modules(self):
-        """Stop all modules"""
+        """Stop all modules and update menu state"""
         print("\nStopping all modules...")
         self.occupancy_module.stop()
         self.dispenser_module.stop()
         self.odor_module.stop()
-        input("\nPress Enter to continue...")
+        self.modules_running = False
+        time.sleep(1)  # Give modules time to clean up
     
     def module_menu(self, module, name):
         """Show control menu for a specific module"""
         module_name = name.capitalize()
         
         while True:
-            self.print_header()
+            self.clear_screen()
             print(f"\n=== {module_name} Module Control ===\n")
-            print(f"Current Status: {module.status().upper()}")
-            print("\n1. Start Module")
+            
+            # Get current status
+            status = module.status()
+            status_color = "\033[1;32m" if status == "running" else "\033[1;31m"
+            print(f"Current Status: {status_color}{status.upper()}\033[0m")
+            
+            # Dynamic menu option based on module status
+            print("\n1. View Module Data" if status == "running" else "\n1. Start Module")
             print("2. Stop Module")
             print("3. Pause/Resume Module")
             print("4. Return to Main Menu")
@@ -1009,8 +1017,13 @@ class SmartRestroomDebugCLI:
             choice = input("\nEnter your choice (1-4): ")
             
             if choice == "1":
-                module.start()
-                input("\nPress Enter to continue...")
+                if status == "running":
+                    # Show module data in a real-time view
+                    self.view_module_data(module, name)
+                else:
+                    # Start the module
+                    module.start()
+                    input("\nPress Enter to continue...")
             elif choice == "2":
                 module.stop()
                 input("\nPress Enter to continue...")
@@ -1027,9 +1040,10 @@ class SmartRestroomDebugCLI:
         """Display main menu and handle user input"""
         while self.running:
             self.print_header()
-            print("\nMAIN MENU\n")
+            print("MAIN MENU\n")
             print("1. View System Dashboard")
-            print("2. Start All Modules")
+            # Dynamic menu option based on module status
+            print("2. View All Data" if self.modules_running else "2. Start All Modules")
             print("3. Stop All Modules")
             print("4. Occupancy Module Control")
             print("5. Dispenser Module Control")
@@ -1041,7 +1055,10 @@ class SmartRestroomDebugCLI:
             if choice == "1":
                 self.display_dashboard()
             elif choice == "2":
-                self.start_all_modules()
+                if self.modules_running:
+                    self.view_data_log()
+                else:
+                    self.start_all_modules()
             elif choice == "3":
                 self.stop_all_modules()
             elif choice == "4":
@@ -1058,19 +1075,232 @@ class SmartRestroomDebugCLI:
                 print("Invalid choice. Please try again.")
                 input("\nPress Enter to continue...")
     
-    def cleanup(self):
-        """Clean up resources and stop all modules"""
-        print("\nCleaning up resources...")
-        self.occupancy_module.stop()
-        self.dispenser_module.stop()
-        self.odor_module.stop()
-        
-        print("[DEBUG] MongoDB connection would be closed here")
-    
     def run(self):
         """Run the application"""
         self.main_menu()
         print("\nThank you for using Smart Restroom System Debug CLI!")
+    
+    def display_dashboard(self):
+        """Display system dashboard with real-time updates"""
+        refresh_interval = 5  # seconds between updates
+        
+        while True:
+            self.clear_screen()
+            print("=" * 80)
+            print(" " * 25 + "SMART RESTROOM SYSTEM DASHBOARD")
+            print("=" * 80)
+            
+            # System Stats
+            sys_info = self.central_hub.update_system_info()
+            print("\nSystem Information:")
+            print("-" * 80)
+            print("Raspberry Pi:")
+            print(f"CPU Temperature : {sys_info['raspberry_pi']['cpu_temp']:.1f}°C")
+            print(f"CPU Usage      : {sys_info['raspberry_pi']['cpu_usage']:.1f}%")
+            print(f"Memory Usage   : {sys_info['raspberry_pi']['memory_usage']:.1f}%")
+            print(f"Storage Usage  : {sys_info['raspberry_pi']['storage_usage']:.1f}%")
+            
+            print("\nArduino:")
+            print(f"CPU Temperature : {sys_info['arduino']['cpu_temp']:.1f}°C")
+            print(f"CPU Usage      : {sys_info['arduino']['cpu_usage']:.1f}%")
+            print(f"Memory Usage   : {sys_info['arduino']['memory_usage']:.1f}%")
+            
+            # Module Status
+            print("\nModule Status:")
+            print("-" * 80)
+            modules_status = self.central_hub.get_modules_status()
+            for module, status in modules_status.items():
+                status_color = "\033[1;32m" if status == "running" else "\033[1;31m"
+                print(f"{module.capitalize():12} : {status_color}{status.upper()}{'\033[0m'}")
+            
+            # Module Data (if running)
+            if self.occupancy_module.running:
+                print("\nOccupancy Data:")
+                print("-" * 80)
+                occ_data = self.occupancy_module.get_summary()
+                print(f"Current State    : {occ_data['status']}")
+                print(f"Total Visitors   : {occ_data['total_visitors']}")
+                print(f"Average Duration : {occ_data['avg_duration']}")
+                print(f"Current Duration : {occ_data['current_duration']}")
+            
+            if self.dispenser_module.running:
+                print("\nDispenser Status:")
+                print("-" * 80)
+                disp_data = self.dispenser_module.get_container_summary()
+                headers = ["Container", "Volume (mL)", "Last Used"]
+                table = []
+                for cont_id, data in disp_data.items():
+                    table.append([
+                        cont_id,
+                        f"{data['remaining_volume_ml']:.1f}",
+                        f"{data['last_volume_change']} mL"
+                    ])
+                print(tabulate(table, headers=headers, tablefmt="grid"))
+            
+            if self.odor_module.running:
+                print("\nOdor Control Status:")
+                print("-" * 80)
+                odor_data = self.odor_module.get_sensor_summary()
+                print(f"Average Temperature : {odor_data['avg_temp']:.1f}°C")
+                print(f"Average Humidity    : {odor_data['avg_hum']:.1f}%")
+                print(f"Average AQI         : {odor_data['avg_aqi']:.1f}")
+                print(f"AQI Trend          : {odor_data['trend'].upper()}")
+                print(f"Fan Status         : {odor_data['fan_status']}")
+                print(f"Freshener Status   : {odor_data['freshener_status']}")
+            
+            print("\n" + "=" * 40)
+            print("Options:")
+            print("1. Refresh Dashboard")
+            print("2. Return to Main Menu")
+            print("=" * 40)
+            
+            print(f"\nAuto-refresh in {refresh_interval} seconds...")
+            
+            # Handle input with timeout
+            if os.name == 'nt':
+                import msvcrt
+                start_time = time.time()
+                choice = ''
+                
+                while time.time() - start_time < refresh_interval:
+                    if msvcrt.kbhit():
+                        char = msvcrt.getch().decode('utf-8')
+                        if char in ['1', '2']:
+                            choice = char
+                            print(char)
+                            break
+                    time.sleep(0.1)
+            else:
+                import select
+                i, _, _ = select.select([sys.stdin], [], [], refresh_interval)
+                choice = sys.stdin.readline().strip() if i else ""
+            
+            if choice == '2':
+                break
+
+    def view_module_data(self, module, name):
+        """Display real-time data for a specific module"""
+        refresh_interval = 5
+        module_name = name.capitalize()
+        
+        while True:
+            self.clear_screen()
+            print("=" * 80)
+            print(f" " * 30 + f"{module_name.upper()} MODULE DATA")
+            print("=" * 80)
+            
+            # Display module-specific data
+            if name == "occupancy":
+                data = module.get_summary()
+                print(f"\nCurrent State    : {data['status']}")
+                print(f"Total Visitors   : {data['total_visitors']}")
+                print(f"Average Duration : {data['avg_duration']}")
+                print(f"Current Duration : {data['current_duration']}")
+                print(f"Sensor State     : {data['sensor_state']}")
+                
+                # Get visitor logs if available
+                if hasattr(module, 'log_list') and module.log_list:
+                    print("\nRecent Visitors:")
+                    headers = ["Visitor ID", "Start Time", "End Time", "Duration"]
+                    table = []
+                    for entry in module.log_list[-5:]:  # Show last 5 entries
+                        end_time = entry.get("end_time_iso", "Active")
+                        duration = self.format_duration(entry["duration"]) if "duration" in entry else "Active"
+                        table.append([
+                            entry["visitor_id"],
+                            datetime.fromtimestamp(entry["start_time"]).strftime("%H:%M:%S"),
+                            end_time if end_time == "Active" else datetime.fromtimestamp(entry["end_time"]).strftime("%H:%M:%S"),
+                            duration
+                        ])
+                    print(tabulate(table, headers=headers, tablefmt="grid"))
+                
+            elif name == "dispenser":
+                data = module.get_container_summary()
+                headers = ["Container", "Volume (mL)", "Percentage", "Sensor", "Last Used"]
+                table = []
+                
+                for cont_id, cont_data in data.items():
+                    volume = cont_data["remaining_volume_ml"]
+                    percentage = int((volume / 425) * 100) if volume is not None else 0
+                    table.append([
+                        cont_id,
+                        f"{volume:.1f}",
+                        f"{percentage}%",
+                        cont_data["sensor_state"],
+                        f"{cont_data['last_volume_change']} mL"
+                    ])
+                
+                print(tabulate(table, headers=headers, tablefmt="grid"))
+                
+            elif name == "odor":
+                data = module.get_sensor_summary()
+                print(f"Average Temperature : {data['avg_temp']:.1f}°C")
+                print(f"Average Humidity    : {data['avg_hum']:.1f}%")
+                print(f"Average AQI         : {data['avg_aqi']:.1f}")
+                print(f"AQI Trend          : {data['trend'].upper()}")
+                print(f"Fan Status         : {data['fan_status']}")
+                print(f"Freshener Status   : {data['freshener_status']}")
+                print(f"Occupancy Status   : {data['occupancy']}")
+                
+                # Display individual sensor readings
+                print("\nSensor Readings:")
+                headers = ["Sensor", "Temperature", "Humidity", "AQI", "Temp Sensor", "Gas Sensor"]
+                table = []
+                
+                for i in range(1, 5):
+                    sensor = data["sensors"][f"sensor_{i}"]
+                    table.append([
+                        f"Sensor {i}",
+                        f"{sensor['temperature']:.1f}°C",
+                        f"{sensor['humidity']:.1f}%",
+                        f"{sensor['aqi']}",
+                        sensor['temp_status'],
+                        sensor['gas_status']
+                    ])
+                
+                print(tabulate(table, headers=headers, tablefmt="grid"))
+            
+            # Display debug messages related to this module
+            debug_messages = debug_handler.get_messages()
+            if debug_messages:
+                filtered_messages = [msg for msg in debug_messages if name.lower() in msg.lower()]
+                if filtered_messages:
+                    print("\nRecent Events:")
+                    print("-" * 80)
+                    for msg in filtered_messages[-10:]:  # Show last 10 messages related to this module
+                        print(msg)
+            
+            # Display options menu
+            print("\n" + "=" * 40)
+            print("Options:")
+            print("1. Refresh Data Log Now")
+            print("2. Return to Module Menu")
+            print("=" * 40)
+            
+            print(f"\nAuto-refresh in {refresh_interval} seconds...")
+            
+            # Handle input with timeout
+            if os.name == 'nt':
+                import msvcrt
+                start_time = time.time()
+                choice = ''
+                
+                while time.time() - start_time < refresh_interval:
+                    if msvcrt.kbhit():
+                        char = msvcrt.getch().decode('utf-8')
+                        if char in ['1', '2']:
+                            choice = char
+                            print(char)
+                            break
+                    time.sleep(0.1)
+            else:
+                import select
+                i, _, _ = select.select([sys.stdin], [], [], refresh_interval)
+                choice = sys.stdin.readline().strip() if i else ""
+            
+            if choice == '2':
+                break
+            # If choice is '1' or timeout, continue loop to refresh
 
 
 # Main entry point
@@ -1078,11 +1308,6 @@ if __name__ == "__main__":
     try:
         # Create data directory
         os.makedirs(DATA_DIR, exist_ok=True)
-        
-        # Print welcome message
-        print("\nWelcome to Smart Restroom System DEBUG CLI")
-        print("This is a simulation version for Windows testing")
-        print("Initializing components, please wait...\n")
         
         # Start the application
         app = SmartRestroomDebugCLI()
