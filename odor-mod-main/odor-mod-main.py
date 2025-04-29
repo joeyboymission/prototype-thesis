@@ -60,7 +60,7 @@ except ImportError:
 # Global variables
 client = None
 db = None
-collection = None
+collection = None  # Make sure variable name matches throughout code
 ser = None
 log_queue = collections.deque(maxlen=20)
 dht_sensors = []  # Will hold DHT sensor objects if available
@@ -250,7 +250,7 @@ def read_dht22():
 
 def check_mongo_connection():
     """Properly try to connect to MongoDB with better error handling"""
-    global client, db, collection, MONGODB_AVAILABLE
+    global client, db, collection, MONGODB_AVAILABLE  # Use consistent variable name
     
     if not MONGODB_AVAILABLE:
         log_message("MongoDB support not available, using local storage only.")
@@ -261,7 +261,7 @@ def check_mongo_connection():
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Test if we can actually reach the server
         db = client["Smart_Cubicle"]
-        collection = db["odor_module"]
+        collection = db["odor_module"]  # Use consistent variable name
         log_message("Connected to MongoDB successfully.")
         return True
     except Exception as e:
@@ -337,6 +337,7 @@ def save_to_local_json(data):
         return False
 
 def log_data(aqi_values, dht_readings):
+    global collection  # Add global declaration to fix the UnboundLocalError
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     data = {
@@ -377,7 +378,11 @@ def log_data(aqi_values, dht_readings):
             log_message("Data also saved to MongoDB")
         except Exception as e:
             log_message(f"MongoDB error: {e}")
+            # Reset MongoDB connection on error
+            global client, db
             collection = None
+            db = None
+            client = None
 
 def setup_dht_sensors():
     """Initialize DHT sensors with proper error handling"""
