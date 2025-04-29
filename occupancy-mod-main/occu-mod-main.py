@@ -2,11 +2,13 @@ import lgpio
 import time
 import json
 import os
+import collections
 from datetime import datetime
 
 # Define global variables at the module level
 mongo_collection = None
 client = None
+log_queue = collections.deque(maxlen=20)  # Store maximum 20 log entries
 
 # Try to import MongoDB libraries, but have a fallback if not available
 try:
@@ -46,8 +48,28 @@ def get_timestamp():
     return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
 
 def log_message(message):
-    """Print a message with timestamp"""
-    print(f"{get_timestamp()} {message}")
+    """Print a message with timestamp and add to log queue"""
+    timestamped_msg = f"{get_timestamp()} {message}"
+    log_queue.append(timestamped_msg)
+    print(timestamped_msg)
+
+def display_log_window(clear=True):
+    """Display the log window with recent entries only"""
+    if clear:
+        os.system('cls' if os.name == 'nt' else 'clear')
+    
+    print("\n" + "=" * 80)
+    print("Recent Log Messages:")
+    print("-" * 80)
+    
+    # Display all logs in the queue (max 20)
+    for msg in log_queue:
+        print(msg)
+    
+    # Fill remaining lines to keep consistent window size
+    remaining_lines = 20 - len(log_queue)
+    for _ in range(remaining_lines):
+        print("")
 
 def check_mongo_connection():
     global mongo_collection, client
@@ -91,7 +113,8 @@ last_state_change_time = time.time()
 
 def perform_post_check():
     """Perform Power-On Self Test to verify all components are working"""
-    log_message("Starting POST (Power-On Self Test) for Occupancy Module")
+    print("\nInitializing Occupancy Module")
+    
     test_results = {
         "proximity_sensor": False,
         "buzzer": False,
@@ -100,46 +123,63 @@ def perform_post_check():
     }
     
     # Test proximity sensor
+    proximity_status = "Offline"
     try:
-        sensor_value = lgpio.gpio_read(chip, SENSOR_PIN)
-        log_message(f"✓ Proximity sensor detected (current state: {'blocked' if sensor_value == 0 else 'clear'})")
+        # Test reading from the sensor
+        state = lgpio.gpio_read(h, SENSOR_PIN)
         test_results["proximity_sensor"] = True
+        proximity_status = "Online"
+        print(f"> Checking Proximity Sensor: {proximity_status}")
     except Exception as e:
-        log_message(f"✗ Proximity sensor test failed: {e}")
+        print(f"> Checking Proximity Sensor: {proximity_status}")
+        log_message(f"Proximity sensor test failed: {e}")
     
-    # Test buzzer with a quick beep
+    # Test buzzer with a short beep
+    buzzer_status = "Offline"
     try:
-        lgpio.gpio_write(chip, BUZZER_PIN, 1)
-        time.sleep(0.1)  # Very short beep
-        lgpio.gpio_write(chip, BUZZER_PIN, 0)
-        log_message("✓ Buzzer control working")
+        lgpio.gpio_write(h, BUZZER_PIN, 1)
+        time.sleep(0.1)  # Very brief activation for testing
+        lgpio.gpio_write(h, BUZZER_PIN, 0)
         test_results["buzzer"] = True
+        buzzer_status = "Online"
+        print(f"> Checking Buzzer: {buzzer_status}")
     except Exception as e:
-        log_message(f"✗ Buzzer test failed: {e}")
+        print(f"> Checking Buzzer: {buzzer_status}")
+        log_message(f"Buzzer test failed: {e}")
     
     # Check local storage
+    storage_status = "Offline"
     try:
         os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
-        existing_data = read_json(JSON_FILE)
-        if isinstance(existing_data, list):
-            log_message(f"✓ Local storage accessible with {len(existing_data)} existing records")
+        existing_data = {}
+        if os.path.exists(JSON_FILE):
+            with open(JSON_FILE, 'r') as f:
+                existing_data = json.load(f)
+            log_message(f"Local storage accessible with existing data")
+            storage_status = "Online"
         else:
-            visitors = existing_data.get("visitors", [])
-            log_message(f"✓ Local storage accessible with {len(visitors)} existing records")
+            log_message("Local storage accessible (no existing data file)")
+            storage_status = "Online"
         test_results["local_storage"] = True
+        print(f"> Checking Local Storage: {storage_status}")
     except Exception as e:
-        log_message(f"✗ Local storage test failed: {e}")
+        print(f"> Checking Local Storage: {storage_status}")
+        log_message(f"Local storage test failed: {e}")
     
     # Check MongoDB connectivity
-    if mongo_collection is not None:
+    mongodb_status = "Offline"
+    if collection is not None:
         try:
-            mongo_collection.find_one()
+            collection.find_one()
             test_results["mongodb_connection"] = True
-            log_message("✓ MongoDB connection active")
+            mongodb_status = "Online"
+            print(f"> Checking MongoDB: {mongodb_status}")
         except Exception as e:
-            log_message(f"✗ MongoDB connection test failed: {e}")
+            print(f"> Checking MongoDB: {mongodb_status}")
+            log_message(f"MongoDB connection test failed: {e}")
     else:
-        log_message("✗ MongoDB not connected, using local storage only")
+        print(f"> Checking MongoDB: {mongodb_status}")
+        log_message("MongoDB not connected, using local storage only")
     
     # Return overall result
     all_okay = (
@@ -348,8 +388,8 @@ def monitor_occupancy(file_path):
                     }
                     
                     # Create a formatted status line
-                    status_line = f"{get_timestamp()} Visitor Count: {max(visitor_count, 0)} | Status: Occupied"
-                    print(status_line)
+                    status_line = f"Visitor Count: {max(visitor_count, 0)} | Status: Occupied"
+                    log_message(status_line)
                     double_beep()
                     update_log(file_path, new_entry)
                     last_state_change_time = current_time
@@ -380,19 +420,19 @@ def monitor_occupancy(file_path):
                             break
                     
                     # Create a formatted status line
-                    status_line = f"{get_timestamp()} Visitor Count: {max(visitor_count, 0)} | Status: Vacant | Duration: {formatted_duration}"
-                    
-                    # Truncate if too long
-                    if len(status_line) > display_width:
-                        status_line = status_line[:display_width-3] + "..."
-                    
-                    print(status_line)
+                    status_line = f"Visitor Count: {max(visitor_count, 0)} | Status: Vacant | Duration: {formatted_duration}"
+                    log_message(status_line)
                     beep_buzzer(LONG_BEEP)
                     update_log(file_path)
                     last_state_change_time = current_time
                     detection_start = None
 
             last_sensor_state = sensor_state
+        
+        # Refresh log display periodically or on status change
+        if current_time - last_display_time >= 1:
+            display_log_window()
+            last_display_time = current_time
 
         # Display options menu periodically
         if current_time - last_display_time >= 5:
@@ -404,11 +444,12 @@ def monitor_occupancy(file_path):
             choice = sys.stdin.readline().strip()
             if choice == "1":
                 log_message("Manual refresh triggered")
-                status_line = f"{get_timestamp()} Visitor Count: {max(visitor_count, 0)} | Status: {current_state}"
+                status_line = f"Visitor Count: {max(visitor_count, 0)} | Status: {current_state}"
                 if current_state == STATE_OCCUPIED and current_start_time is not None:
                     status_line += f" | Duration so far: {format_duration(time.time() - current_start_time)}"
-                print(status_line)
+                log_message(status_line)
                 last_display_time = current_time
+                display_log_window()
             elif choice == "2":
                 log_message("Returning to main menu...")
                 break

@@ -2,6 +2,7 @@ import lgpio
 import time
 import os
 import json
+import collections
 from datetime import datetime
 
 # Try to import MongoDB libraries, but have a fallback if not available
@@ -31,6 +32,7 @@ MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongod
 client = None
 db = None
 collection = None
+log_queue = collections.deque(maxlen=20)  # Store maximum 20 log entries
 
 # Local data fallback setup
 DATA_DIR = "/home/admin/Documents/local-data"
@@ -42,8 +44,28 @@ def get_timestamp():
     return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
 
 def log_message(message):
-    """Print a message with timestamp"""
-    print(f"{get_timestamp()} {message}")
+    """Print a message with timestamp and add to log queue"""
+    timestamped_msg = f"{get_timestamp()} {message}"
+    log_queue.append(timestamped_msg)
+    print(timestamped_msg)
+
+def display_log_window(clear=True):
+    """Display the log window with recent entries only"""
+    if clear:
+        os.system('cls' if os.name == 'nt' else 'clear')
+    
+    print("\n" + "=" * 80)
+    print("Recent Log Messages:")
+    print("-" * 80)
+    
+    # Display all logs in the queue (max 20)
+    for msg in log_queue:
+        print(msg)
+    
+    # Fill remaining lines to keep consistent window size
+    remaining_lines = 20 - len(log_queue)
+    for _ in range(remaining_lines):
+        print("")
 
 def check_mongo_connection():
     global client, db, collection
@@ -95,7 +117,8 @@ SIGNIFICANT_CHANGE_THRESHOLD = 10.0
 
 def perform_post_check():
     """Perform Power-On Self Test to verify all components are working"""
-    log_message("Starting POST (Power-On Self Test) for Dispenser Module")
+    print("\nInitializing Dispenser Module")
+    
     test_results = {
         "ultrasonic_sensors": [False] * 4,
         "local_storage": False,
@@ -103,47 +126,52 @@ def perform_post_check():
     }
     
     # Test ultrasonic sensors
-    for i in range(4):
-        container = f"CONT{i+1}"
-        trigger = triggers[i]
-        echo = echos[i]
-        
+    for i, (trigger, echo) in enumerate(zip(triggers, echos)):
         try:
-            # Try a test measurement
-            _, distance = measure_raw_data(trigger, echo, num_measurements=2)
-            if distance is not None:
-                volume = calculate_usable_volume(container, distance)
+            # Perform a test measurement
+            _, distance = measure_distance(trigger, echo)
+            if distance is not None and 0 < distance < 400:  # Valid distance range: 0-400cm
                 test_results["ultrasonic_sensors"][i] = True
-                log_message(f"✓ Ultrasonic sensor {container} working: Distance = {distance:.2f} cm, Volume = {volume:.2f} mL")
+                print(f"> Checking SONIC{i+1}: Online")
             else:
-                log_message(f"✗ Ultrasonic sensor {container} not reading properly")
+                print(f"> Checking SONIC{i+1}: Offline")
         except Exception as e:
-            log_message(f"✗ Ultrasonic sensor {container} test failed: {e}")
+            print(f"> Checking SONIC{i+1}: Offline")
+            log_message(f"Ultrasonic sensor #{i+1} test failed: {e}")
     
     # Check local storage
+    storage_status = "Offline"
     try:
         os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
         existing_data = []
         if os.path.exists(JSON_FILE):
             with open(JSON_FILE, 'r') as f:
                 existing_data = json.load(f)
-            log_message(f"✓ Local storage accessible with {len(existing_data)} existing records")
+            log_message(f"Local storage accessible with {len(existing_data)} existing records")
+            storage_status = "Online"
         else:
-            log_message("✓ Local storage accessible (no existing data file)")
+            log_message("Local storage accessible (no existing data file)")
+            storage_status = "Online"
         test_results["local_storage"] = True
+        print(f"> Checking Local Storage: {storage_status}")
     except Exception as e:
-        log_message(f"✗ Local storage test failed: {e}")
+        print(f"> Checking Local Storage: {storage_status}")
+        log_message(f"Local storage test failed: {e}")
     
     # Check MongoDB connectivity
+    mongodb_status = "Offline"
     if collection is not None:
         try:
             collection.find_one()
             test_results["mongodb_connection"] = True
-            log_message("✓ MongoDB connection active")
+            mongodb_status = "Online"
+            print(f"> Checking MongoDB: {mongodb_status}")
         except Exception as e:
-            log_message(f"✗ MongoDB connection test failed: {e}")
+            print(f"> Checking MongoDB: {mongodb_status}")
+            log_message(f"MongoDB connection test failed: {e}")
     else:
-        log_message("✗ MongoDB not connected, using local storage only")
+        print(f"> Checking MongoDB: {mongodb_status}")
+        log_message("MongoDB not connected, using local storage only")
     
     # Return overall result
     all_okay = (
@@ -281,7 +309,6 @@ def start_monitoring():
     delay_between_readings = 5  # seconds between readings
     last_saved_volumes = {}  # To track when significant changes occur
     last_display_time = time.time()
-    display_width = 80
     
     # Run POST check
     perform_post_check()
@@ -301,9 +328,11 @@ def start_monitoring():
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             significant_change_detected = False
             
+            # Clear and update the display
+            display_log_window()
+            
             # Format for display line
-            status_items = []
-            status_items.append(f"{get_timestamp()} Reading {reading_count}")
+            log_message(f"Reading {reading_count}")
             
             for i in range(4):
                 container = f"CONT{i+1}"
@@ -317,7 +346,6 @@ def start_monitoring():
                         "distance_cm": None,
                         "remaining_volume_ml": None
                     }
-                    status_items.append(f"{container}: Error")
                 else:
                     volume = calculate_usable_volume(container, distance)
                     amount_used = None
@@ -335,9 +363,11 @@ def start_monitoring():
                         last_saved_volumes[container] = volume
                     
                     # Add to status items with 2 decimal places
-                    status_items.append(f"{container}: {volume:.2f} mL")
+                    status_line = f"{container}: {volume:.2f} mL"
                     if amount_used is not None and amount_used > 0:
-                        status_items.append(f"Used: {amount_used:.2f} mL")
+                        status_line += f", Used: {amount_used:.2f} mL"
+                    
+                    log_message(status_line)
                     
                     current_reading[container] = {
                         "distance_cm": round(distance, 2),  # Round to 2 decimal places
@@ -345,16 +375,6 @@ def start_monitoring():
                     }
                 
                 previous_volumes[container] = volume
-            
-            # Create status line
-            status_line = " | ".join(status_items)
-            
-            # Truncate if too long
-            if len(status_line) > display_width:
-                status_line = status_line[:display_width-3] + "..."
-                
-            # Print status to console
-            print(status_line)
             
             # Only save data if a significant change is detected
             if significant_change_detected:

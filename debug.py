@@ -261,6 +261,41 @@ class OccupancyModule(ModuleBase):
         self.simulation_timer = 0
         self.simulation_state_duration = random.randint(30, 120)  # Random duration for state
     
+    def perform_post_check(self):
+        """Perform Power-On Self Test to verify all components are working"""
+        print("\nConnected to the MongoDB successfully")
+        print("Initializing Occupancy Module")
+        
+        # Check proximity sensor
+        proximity_status = "Online"
+        if self.chip:
+            try:
+                # Simulate reading from sensor
+                sensor_value = random.choice([0, 1])  # Random value for simulation
+                proximity_status = "Online" if sensor_value in [0, 1] else "Offline"
+            except:
+                proximity_status = "Offline"
+        else:
+            proximity_status = "Offline"
+        print(f"> Checking Proximity Sensor: {proximity_status}")
+        
+        # Check buzzer
+        buzzer_status = "Online"
+        if self.chip:
+            try:
+                # Simulate buzzer check
+                lgpio.gpio_write(self.chip, self.BUZZER_PIN, 1)
+                time.sleep(0.1)
+                lgpio.gpio_write(self.chip, self.BUZZER_PIN, 0)
+                buzzer_status = "Online"
+            except:
+                buzzer_status = "Offline"
+        else:
+            buzzer_status = "Offline"
+        print(f"> Checking Buzzer: {buzzer_status}")
+        
+        return proximity_status == "Online" and buzzer_status == "Online"
+    
     def setup_hardware(self):
         try:
             self.chip = lgpio.gpiochip_open(0)  # Simulated
@@ -369,6 +404,9 @@ class OccupancyModule(ModuleBase):
             self.running = False
             return
         
+        # Perform POST check
+        self.perform_post_check()
+        
         # Load initial state
         self.load_initial_state()
         
@@ -458,6 +496,34 @@ class DispenserModule(ModuleBase):
         self.reading_count = 0
         self.usage_simulation = [10, 20, 5, 15]  # ml used per interval per container
     
+    def perform_post_check(self):
+        """Perform Power-On Self Test to verify all components are working"""
+        print("\nConnected to the MongoDB successfully")
+        print("Initializing Dispenser Module")
+        
+        # Check ultrasonic sensors
+        for i in range(4):
+            sonic_status = "Offline"
+            if self.h:
+                try:
+                    # Simulate ultrasonic sensor check
+                    # In real implementation, we'd send a trigger pulse and check for echo
+                    trigger_pin = self.triggers[i]
+                    echo_pin = self.echos[i]
+                    
+                    # Simulate successful reading
+                    pulse_duration = random.uniform(0.001, 0.02)  # Simulate echo time
+                    distance = pulse_duration * 17150  # Convert to distance
+                    
+                    if 2 <= distance <= 400:  # Valid range for HC-SR04
+                        sonic_status = "Online"
+                except:
+                    pass
+            print(f"> Checking SONIC{i+1}: {sonic_status}")
+        
+        # Return overall status
+        return all(self.container_data[f"CONT{i+1}"]["sensor_state"] == "UP" for i in range(4))
+    
     def setup_hardware(self):
         try:
             self.h = lgpio.gpiochip_open(self.GPIO_CHIP)  # Simulated
@@ -509,6 +575,9 @@ class DispenserModule(ModuleBase):
             print("Failed to initialize dispenser hardware. Module not started.")
             self.running = False
             return
+            
+        # Perform POST check
+        self.perform_post_check()
         
         while self.running and not self.stop_event.is_set():
             if not self.paused:
@@ -555,63 +624,74 @@ class OdorModule(ModuleBase):
     def __init__(self):
         super().__init__("Odor")
         # GPIO setup - simulated
-        self.GPIO_CHIP = 0
-        self.h = None
-        self.FAN_RELAY_PIN = 23
-        self.FRESHENER_RELAY_PIN = 22
-        self.SENSOR_PIN = 17
+        self.MQ135_PIN = 0  # Analog pin for MQ-135
+        self.DHT22_PIN = 4  # DHT22 signal pin
+        self.AC_PIN = 23    # AC fan control
+        self.DC_PIN = 24    # DC fan control
+        self.FAN_STATUS_PIN = 25  # Fan status LED
+        self.chip = None
         
-        # DHT22 sensors - simulated
-        self.dht_devices = None
-        self.dht_pins = [4, 5, 6, 12]
+        # Sensor values
+        self.temperature = 0
+        self.humidity = 0
+        self.gas_level = 0
+        self.gas_threshold = 700
+        self.temp_threshold = 30
+        self.humid_threshold = 70
         
-        # I2C - simulated
-        self.bus = MockSMBus(1)
-        self.ARDUINO_ADDRESS = 8
+        # Fan control
+        self.fan_speed = 0
+        self.fan_auto = True
         
-        # Module state
-        self.fan_status = False
-        self.freshener_triggered = False
-        self.is_occupied = False
-        self.last_sensor_state = 1
-        self.last_exit_time = time.time()
-        self.last_spray_time = time.time()
-        self.aqi_history = []
-        self.FAN_POST_EXIT_DURATION = 1200
-        self.last_time = time.time()
+        # Status
+        self.status_code = 0  # 0: Normal, 1: High Gas, 2: High Temp, 3: Both
+        self.odor_level = "Normal"  # Normal, Moderate, High
         
-        # Sensor data
-        self.sensor_data = {
-            f"sensor_{i+1}": {
-                "temperature": random.uniform(20, 35),
-                "humidity": random.uniform(30, 80),
-                "aqi": random.randint(50, 500),
-                "temp_status": "UP",
-                "gas_status": "UP"
-            } for i in range(4)
-        }
+        # Simulation variables
+        self.simulation_timer = 0
         
-        # MongoDB collection - simulated
-        self.mongo_collection = None
+    def perform_post_check(self):
+        """Perform Power-On Self Test to verify all sensors are working"""
+        print("\nConnected to the MongoDB successfully")
+        print("Initializing Odor Module")
         
-        # Simulation values
-        self.aqi_trend = 0  # 0: stable, 1: increasing, -1: decreasing
-        self.aqi_change_timer = 0
+        # Simulate checking gas sensors
+        gas_sensors = ["GAS1", "GAS2", "GAS3", "GAS4"]
+        temp_sensors = ["TEMP1", "TEMP2", "TEMP3", "TEMP4"]
+        
+        all_sensors_online = True
+        
+        # Check gas sensors
+        for sensor in gas_sensors:
+            # Simulate sensor check
+            status = "Online" if random.random() > 0.1 else "Offline"
+            print(f"> Checking {sensor}: {status}")
+            if status == "Offline":
+                all_sensors_online = False
+        
+        # Check temperature sensors
+        for sensor in temp_sensors:
+            # Simulate sensor check
+            status = "Online" if random.random() > 0.1 else "Offline"
+            print(f"> Checking {sensor}: {status}")
+            if status == "Offline":
+                all_sensors_online = False
+        
+        return all_sensors_online
     
     def setup_hardware(self):
         try:
-            self.h = lgpio.gpiochip_open(self.GPIO_CHIP)  # Simulated
-            self.dht_devices = [MockDHT(pin) for pin in self.dht_pins]
+            self.chip = lgpio.gpiochip_open(0)  # Simulated
             return True
         except Exception as e:
             print(f"Error setting up odor hardware: {e}")
             return False
     
     def cleanup_hardware(self):
-        if self.h:
+        if self.chip:
             try:
-                lgpio.gpiochip_close(self.h)
-                self.h = None
+                lgpio.gpiochip_close(self.chip)
+                self.chip = None
             except Exception as e:
                 print(f"Error cleaning up odor hardware: {e}")
     
@@ -741,6 +821,9 @@ class OdorModule(ModuleBase):
             print("Failed to initialize odor hardware. Module not started.")
             self.running = False
             return
+            
+        # Perform POST check
+        self.perform_post_check()
         
         while self.running and not self.stop_event.is_set():
             if not self.paused:
