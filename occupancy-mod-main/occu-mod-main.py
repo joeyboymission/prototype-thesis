@@ -81,7 +81,7 @@ def check_mongo_connection():
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Test connection
         db = client['Smart_Cubicle']
-        mongo_collection = db['occupancy_data']
+        mongo_collection = db['occupancy_module']  # Updated collection name
         log_message("Connected to MongoDB successfully.")
         return True
     except Exception as e:
@@ -237,21 +237,29 @@ def write_json(file_path, data):
 
 # MongoDB handling
 def update_mongo(entry):
+    """Update MongoDB with properly formatted data"""
     global mongo_collection
     
+    # Format data to match remote database exactly
+    formatted_data = {
+        "type": "visit",
+        "visitor_id": entry["visitor_id"],
+        "start_time": datetime.fromtimestamp(entry["start_time"]).strftime("%Y-%m-%dT%H:%M:%S.000000"),
+        "end_time": datetime.fromtimestamp(entry["end_time"]).strftime("%Y-%m-%dT%H:%M:%S.000000") if "end_time" in entry else None,
+        "duration": int(entry["duration"]) if "duration" in entry else None
+    }
+    
     # Always save to local storage first
-    save_to_local_json(entry)
+    save_to_local_json(formatted_data)
     
     # Then try to save to MongoDB if available
-    if mongo_collection is None:
-        return
-    
-    try:
-        mongo_collection.insert_one(entry)
-        log_message("Data also saved to MongoDB.")
-    except Exception as e:
-        log_message(f"Error updating MongoDB: {e}. Data saved locally only.")
-        mongo_collection = None
+    if mongo_collection is not None:
+        try:
+            mongo_collection.insert_one(formatted_data)
+            log_message("Data also saved to MongoDB.")
+        except Exception as e:
+            log_message(f"Error updating MongoDB: {e}. Data saved locally only.")
+            mongo_collection = None
 
 # Save to local JSON
 def save_to_local_json(entry):

@@ -20,34 +20,30 @@ def check_db_connection():
         return False, None
 
 def generate_random_data():
-    """Generate random dispenser data"""
+    """Generate random dispenser data matching remote format exactly"""
     current_time = datetime.now()
     timestamp = current_time.strftime("%Y-%m-%d %H:%M:%S")
     
-    def get_status(level):
-        if level == 0: return "EMPTY"
-        if level < 20: return "LOW"
-        return "OK"
-    
-    # Generate random levels
-    level1 = random.randint(0, 100)
-    level2 = random.randint(0, 100)
-    
     return {
+        "reading": random.randint(1, 100),
         "timestamp": timestamp,
-        "dispenser": {
-            "DISP1": {
-                "level": level1,
-                "status": get_status(level1)
+        "data": {
+            "CONT1": {
+                "distance_cm": round(random.uniform(2.0, 13.0), 4),
+                "remaining_volume_ml": round(random.uniform(0.0, 425.0), 2)
             },
-            "DISP2": {
-                "level": level2,
-                "status": get_status(level2)
+            "CONT2": {
+                "distance_cm": round(random.uniform(2.0, 13.0), 4),
+                "remaining_volume_ml": round(random.uniform(0.0, 425.0), 2)
+            },
+            "CONT3": {
+                "distance_cm": round(random.uniform(2.0, 13.0), 4),
+                "remaining_volume_ml": round(random.uniform(0.0, 425.0), 2)
+            },
+            "CONT4": {
+                "distance_cm": round(random.uniform(2.0, 13.0), 4),
+                "remaining_volume_ml": round(random.uniform(0.0, 425.0), 2)
             }
-        },
-        "dispense_count": {
-            "DISP1": random.randint(0, 50),
-            "DISP2": random.randint(0, 50)
         }
     }
 
@@ -67,18 +63,22 @@ def continuous_send(client, collection):
     """Continuously send random data every 5 seconds"""
     try:
         print("\nStarting continuous data send (Press CTRL+C to stop)")
+        reading_count = 1
         while True:
             data = generate_random_data()
+            data['reading'] = reading_count
             result = collection.insert_one(data)
             
             print("\nData sent successfully!")
+            print(f"Reading: {data['reading']}")
             print(f"Timestamp: {data['timestamp']}")
-            print("Dispenser Levels:")
-            for disp, info in data['dispenser'].items():
-                print(f"{disp}: Level={info['level']}%, Status={info['status']}")
-            print("Dispense Counts:", 
-                  ", ".join(f"{k}: {v}" for k, v in data['dispense_count'].items()))
+            print("\nContainer Readings:")
+            for cont, values in data['data'].items():
+                print(f"{cont}:")
+                print(f"  Distance: {values['distance_cm']} cm")
+                print(f"  Volume: {values['remaining_volume_ml']} mL")
             
+            reading_count += 1
             time.sleep(5)
             os.system('cls' if os.name == 'nt' else 'clear')
             
@@ -100,9 +100,8 @@ def main():
         
         if choice == "1":
             try:
-                data = generate_random_data()
                 db = client["Smart_Cubicle"]
-                collection = db["dispenser_module"]
+                collection = db["dispenser_module"]  # Updated collection name
                 result = collection.insert_one(data)
                 
                 print("\nData sent successfully!")
@@ -119,7 +118,7 @@ def main():
         elif choice == "2":
             try:
                 db = client["Smart_Cubicle"]
-                collection = db["dispenser_module"]
+                collection = db["dispenser_module"]  # Updated collection name
                 continuous_send(client, collection)
             except Exception as e:
                 print(f"\nError: {e}")

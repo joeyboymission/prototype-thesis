@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import time  # Added missing time import
 from datetime import datetime
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
@@ -21,8 +22,6 @@ def check_db_connection():
 def generate_random_data():
     """Generate random sensor data matching remote format exactly"""
     current_time = datetime.now()
-    
-    # Format timestamp as string "YYYY-MM-DD HH:MM:SS"
     timestamp = current_time.strftime("%Y-%m-%d %H:%M:%S")
     
     return {
@@ -74,17 +73,23 @@ def continuous_send(client, collection):
             data = generate_random_data()
             result = collection.insert_one(data)
             
+            # Clear screen before printing new data
+            os.system('cls' if os.name == 'nt' else 'clear')
+            
             print("\nData sent successfully!")
             print(f"Timestamp: {data['timestamp']}")
-            print("AQI Values:", 
-                  ", ".join(f"GAS{i+1}: {v}" 
-                           for i, v in enumerate(data['aqi'].values())))
-            print("Temperature Values:", 
-                  ", ".join(f"TEMP{i+1}: {v['temp']}°C" 
-                           for i, v in enumerate(data['dht'].values())))
             
-            time.sleep(5)  # Wait 5 seconds before next send
-            os.system('cls' if os.name == 'nt' else 'clear')
+            # Fixed string formatting for AQI values
+            aqi_values = [f"GAS{i+1}: {data['aqi'][f'GAS{i+1}']}" 
+                         for i in range(4)]
+            print("AQI Values:", ", ".join(aqi_values))
+            
+            # Fixed string formatting for temperature values
+            temp_values = [f"TEMP{i+1}: {data['dht'][f'TEMP{i+1}']['temp']}°C" 
+                          for i in range(4)]
+            print("Temperature Values:", ", ".join(temp_values))
+            
+            time.sleep(5)
             
     except KeyboardInterrupt:
         print("\nContinuous send stopped")
@@ -92,7 +97,6 @@ def continuous_send(client, collection):
 
 def main():
     while True:
-        # Check database connection
         db_status, client = check_db_connection()
         display_menu(db_status)
         
@@ -104,41 +108,34 @@ def main():
             continue
         
         if choice == "1":
-            if not db_status:
-                print("\nError: Database is offline. Cannot send data.")
-                time.sleep(2)
-                continue
-                
             try:
-                # Generate and send random data
                 data = generate_random_data()
                 db = client["Smart_Cubicle"]
-                collection = db["odor_module"]
-                
-                # Insert data
+                collection = db["odor_module"]  # Updated collection name
                 result = collection.insert_one(data)
                 
                 print("\nData sent successfully!")
-                print("\nSent data preview:")
-                print(f"Timestamp: {data['timestamp']}")                
-                print("AQI Values:", 
-                      ", ".join(f"GAS{i+1}: {v}" 
-                               for i, v in enumerate(data['aqi'].values())))
-
-                print("Temperature Values:", 
-                      ", ".join(f"TEMP{i+1}: {v['temp']}°C" 
-                               for i, v in enumerate(data['dht'].values())))
-
+                print(f"Timestamp: {data['timestamp']}")
+                
+                # Fixed string formatting for single send
+                aqi_values = [f"GAS{i+1}: {data['aqi'][f'GAS{i+1}']}" 
+                            for i in range(4)]
+                print("AQI Values:", ", ".join(aqi_values))
+                
+                temp_values = [f"TEMP{i+1}: {data['dht'][f'TEMP{i+1}']['temp']}°C" 
+                             for i in range(4)]
+                print("Temperature Values:", ", ".join(temp_values))
+                
                 input("\nPress Enter to continue...")
                 
             except Exception as e:
-                print(f"\nError sending data: {e}")
-                input("\nPress Enter to continue...")
+                print(f"\nError: {e}")
+                input("Press Enter to continue...")
                 
         elif choice == "2":
             try:
                 db = client["Smart_Cubicle"]
-                collection = db["odor_module"]
+                collection = db["odor_module"]  # Updated collection name
                 continuous_send(client, collection)
             except Exception as e:
                 print(f"\nError: {e}")

@@ -1,25 +1,30 @@
 {
-    "dispensing_module_format": {
+    "dispenser_module_format": {
         "_id": "ObjectId()",
+        "reading": 0,
         "timestamp": "YYYY-MM-DD HH:MM:SS",
-        "dispenser": {
-            "DISP1": {
-                "level": 0,
-                "status": "OK/LOW/EMPTY"
+        "data": {
+            "CONT1": {
+                "distance_cm": 0.0,
+                "remaining_volume_ml": 0.0
             },
-            "DISP2": {
-                "level": 0,
-                "status": "OK/LOW/EMPTY"
+            "CONT2": {
+                "distance_cm": 0.0,
+                "remaining_volume_ml": 0.0
+            },
+            "CONT3": {
+                "distance_cm": 0.0,
+                "remaining_volume_ml": 0.0
+            },
+            "CONT4": {
+                "distance_cm": 0.0,
+                "remaining_volume_ml": 0.0
             }
-        },
-        "dispense_count": {
-            "DISP1": 0,
-            "DISP2": 0
         }
     },
     "data_ranges": {
-        "level": "integer (0-100)",
-        "status": "string (OK/LOW/EMPTY)",
-        "dispense_count": "integer (0+)"
+        "reading": "integer (1+)",
+        "distance_cm": "float (2.0-13.0)",
+        "remaining_volume_ml": "float (0.0-425.0)"
     }
 }

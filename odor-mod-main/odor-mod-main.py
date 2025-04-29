@@ -217,8 +217,8 @@ def check_mongo_connection():
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Test connection
-        db = client["Smart_Cubicle"]  # Same database to all of the module
-        collection = db["odor_module"]  # Different collection for odor data
+        db = client["Smart_Cubicle"]  # Same database
+        collection = db["odor_module"]  # Updated collection name
         log_message("Connected to MongoDB successfully.")
         return True
     except Exception as e:
@@ -328,14 +328,37 @@ def save_to_local_json(data):
 def log_data(aqi_values, dht_readings):
     """Log data to both MongoDB and local JSON file simultaneously."""
     global client, db, collection
-    timestamp = datetime.now()
+    
+    # Format timestamp as string
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Format data exactly like remote database
     data = {
         "timestamp": timestamp,
-        "timestamp_iso": timestamp.isoformat(),  # Added ISO format timestamp for consistency
-        "aqi": {f"GAS{i+1}": aqi_values[i] for i in range(4)},
-        "dht": {f"TEMP{i+1}": dht_readings[i] for i in range(4)},
-        "max_aqi": max(aqi_values),  # Added for easy querying
-        "avg_temp": sum(r['temp'] for r in dht_readings) / len(dht_readings)  # Added average temperature
+        "aqi": {
+            "GAS1": aqi_values[0],
+            "GAS2": aqi_values[1],
+            "GAS3": aqi_values[2],
+            "GAS4": aqi_values[3]
+        },
+        "dht": {
+            "TEMP1": {
+                "temp": round(dht_readings[0]['temp'], 1),
+                "hum": round(dht_readings[0]['hum'], 1)
+            },
+            "TEMP2": {
+                "temp": round(dht_readings[1]['temp'], 1),
+                "hum": round(dht_readings[1]['hum'], 1)
+            },
+            "TEMP3": {
+                "temp": round(dht_readings[2]['temp'], 1),
+                "hum": round(dht_readings[2]['hum'], 1)
+            },
+            "TEMP4": {
+                "temp": round(dht_readings[3]['temp'], 1),
+                "hum": round(dht_readings[3]['hum'], 1)
+            }
+        }
     }
     
     # Always save to local storage first

@@ -77,7 +77,7 @@ def check_mongo_connection():
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Test connection
         db = client['Smart_Cubicle']
-        collection = db['dispenser_resource']
+        collection = db['dispenser_module']  # Updated collection name
         log_message("Connected to MongoDB successfully.")
         return True
     except Exception as e:
@@ -274,22 +274,44 @@ def calculate_usable_volume(container, distance):
         usable_volume = 425.0 * volume_fraction
         return round(usable_volume, 2)
 
-# Function to save data to both MongoDB and local storage
 def save_data(reading_doc):
+    """Save data in format matching remote database exactly"""
+    # Format data
+    formatted_data = {
+        "reading": reading_doc["reading"],
+        "timestamp": reading_doc["timestamp"],
+        "data": {
+            "CONT1": {
+                "distance_cm": round(reading_doc["data"]["CONT1"]["distance_cm"], 4),
+                "remaining_volume_ml": round(reading_doc["data"]["CONT1"]["remaining_volume_ml"], 2)
+            },
+            "CONT2": {
+                "distance_cm": round(reading_doc["data"]["CONT2"]["distance_cm"], 4),
+                "remaining_volume_ml": round(reading_doc["data"]["CONT2"]["remaining_volume_ml"], 2)
+            },
+            "CONT3": {
+                "distance_cm": round(reading_doc["data"]["CONT3"]["distance_cm"], 4),
+                "remaining_volume_ml": round(reading_doc["data"]["CONT3"]["remaining_volume_ml"], 2)
+            },
+            "CONT4": {
+                "distance_cm": round(reading_doc["data"]["CONT4"]["distance_cm"], 4),
+                "remaining_volume_ml": round(reading_doc["data"]["CONT4"]["remaining_volume_ml"], 2)
+            }
+        }
+    }
+    
     # Always save to local storage first
-    save_to_local_json(reading_doc)
+    save_to_local_json(formatted_data)
     
     # Then try to save to MongoDB if available
-    global collection, client
     if collection is not None:
         try:
-            collection.insert_one(reading_doc)
-            log_message(f"Data also saved to MongoDB")
+            collection.insert_one(formatted_data)
+            log_message("Data also saved to MongoDB")
             return True
         except Exception as e:
             log_message(f"Error saving to MongoDB: {e}. Data saved locally only.")
             collection = None
-            client = None
             return True
     return True
 

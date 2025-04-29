@@ -26,10 +26,5 @@
                 "hum": 0.0
             }
         }
-    },
-    "data_ranges": {
-        "aqi_values": "integer (0-500)",
-        "temperature": "float (20.0-40.0)",
-        "humidity": "float (40.0-90.0)"
     }
 }

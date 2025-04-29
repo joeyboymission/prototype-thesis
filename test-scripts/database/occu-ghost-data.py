@@ -20,17 +20,18 @@ def check_db_connection():
         return False, None
 
 def generate_random_data():
-    """Generate random occupancy data"""
+    """Generate random occupancy data matching remote format exactly"""
     current_time = datetime.now()
-    # Generate random duration between 1-10 minutes
-    duration = random.uniform(60, 600)  # seconds
+    # Generate random duration between 1-15 minutes
+    duration = random.randint(60, 900)  # seconds
     start_time = current_time - timedelta(seconds=duration)
     
     return {
+        "type": "visit",
         "visitor_id": random.randint(1, 100),
-        "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
-        "end_time": current_time.strftime("%Y-%m-%d %H:%M:%S"),
-        "duration": round(duration, 1)
+        "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.000000"),
+        "end_time": current_time.strftime("%Y-%m-%dT%H:%M:%S.000000"),
+        "duration": duration
     }
 
 def display_menu(db_status):
@@ -56,10 +57,11 @@ def continuous_send(client, collection):
             result = collection.insert_one(data)
             
             print("\nData sent successfully!")
+            print(f"Type: {data['type']}")
             print(f"Visitor ID: {data['visitor_id']}")
             print(f"Start Time: {data['start_time']}")
             print(f"End Time: {data['end_time']}")
-            print(f"Duration: {data['duration']:.1f} seconds")
+            print(f"Duration: {data['duration']} seconds")
             
             visitor_id += 1
             time.sleep(5)
@@ -82,23 +84,22 @@ def main():
             continue
         
         if choice == "1":
-            data = generate_random_data()
             try:
                 db = client["Smart_Cubicle"]
-                collection = db["occupancy_module"]
+                collection = db["occupancy_module"]  # Updated collection name
                 result = collection.insert_one(data)
                 print("\nData sent successfully!")
                 print(f"Visitor ID: {data['visitor_id']}")
                 print(f"Start Time: {data['start_time']}")
                 print(f"End Time: {data['end_time']}")
-                print(f"Duration: {data['duration']:.1f} seconds")
+                print(f"Duration: {data['duration']} seconds")
             except Exception as e:
                 print(f"\nError: {e}")
                 input("Press Enter to continue...")
         elif choice == "2":
             try:
                 db = client["Smart_Cubicle"]
-                collection = db["occupancy_module"]
+                collection = db["occupancy_module"]  # Updated collection name
                 continuous_send(client, collection)
             except Exception as e:
                 print(f"\nError: {e}")
