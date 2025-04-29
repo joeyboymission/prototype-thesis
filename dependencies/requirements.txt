@@ -1,8 +1,7 @@
 # ===========================================
 # Database Dependencies
 # ===========================================
-pymongo[srv]>=4.6.0    # Updated to include srv support
-python-bson>=0.5.10    # Removed conflicting bson package
+pymongo[srv]>=4.6.0    # Already includes bson
 
 # ===========================================
 # System and Utility Dependencies
