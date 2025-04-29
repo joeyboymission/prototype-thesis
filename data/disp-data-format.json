@@ -1,0 +1,25 @@
+{
+    "dispensing_module_format": {
+        "_id": "ObjectId()",
+        "timestamp": "YYYY-MM-DD HH:MM:SS",
+        "dispenser": {
+            "DISP1": {
+                "level": 0,
+                "status": "OK/LOW/EMPTY"
+            },
+            "DISP2": {
+                "level": 0,
+                "status": "OK/LOW/EMPTY"
+            }
+        },
+        "dispense_count": {
+            "DISP1": 0,
+            "DISP2": 0
+        }
+    },
+    "data_ranges": {
+        "level": "integer (0-100)",
+        "status": "string (OK/LOW/EMPTY)",
+        "dispense_count": "integer (0+)"
+    }
+}

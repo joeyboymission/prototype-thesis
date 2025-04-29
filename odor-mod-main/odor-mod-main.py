@@ -1,16 +1,19 @@
+import os
+import subprocess
+import re
 import serial
 import time
-import lgpio
-import adafruit_dht
-import board
-import os
 import json
-import glob
-import subprocess
-import signal
-from datetime import datetime
-import pytz
-import collections
+import datetime
+import psutil
+import adafruit_dht
+import RPi.GPIO as GPIO
+from tabulate import tabulate
+from pymongo import MongoClient
+
+# USB reset constants
+USB_ERROR_THRESHOLD = 3  # Reset after 3 consecutive errors
+serial_error_count = 0   # Counter to track serial errors
 
 # Define global variables at the module level
 client = None
@@ -202,7 +205,7 @@ def find_arduino_serial_port():
 dht_pins = [board.D4, board.D5, board.D6, board.D12]  # GPIO4,5,6,12
 dht_sensors = [adafruit_dht.DHT22(pin) for pin in dht_pins]
 
-# MongoDB Setup
+# MongoDB Setup - Updated to match occupancy module
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
 
 def check_mongo_connection():
@@ -214,8 +217,8 @@ def check_mongo_connection():
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')  # Test connection
-        db = client["Smart_Cubicle"]
-        collection = db["odor_module"]
+        db = client["Smart_Cubicle"]  # Same database to all of the module
+        collection = db["odor_module"]  # Different collection for odor data
         log_message("Connected to MongoDB successfully.")
         return True
     except Exception as e:
@@ -237,176 +240,57 @@ os.makedirs(LOCAL_DIR, exist_ok=True)  # Create directory if it doesn't exist
 last_spray = 0
 SPRAY_INTERVAL = 36 * 60  # 36 minutes in seconds
 SPRAY_DURATION = 1        # 1 second spray
+FAN_EXIT_DELAY = 5  # 5 seconds delay after visitor exits
+FRESHENER_EXIT_DELAY = 5  # 5 seconds delay for freshener after exit
 
-def perform_post_check():
-    """Perform Power-On Self Test to verify all components are working"""
-    print("\nInitializing Odor Module")
-    
-    test_results = {
-        "gas_sensors": [False] * 4,
-        "temp_sensors": [False] * 4,
-        "fan_relay": False,
-        "freshener_relay": False,
-        "local_storage": False,
-        "mongodb_connection": False
-    }
-    
-    # Test gas sensors (via I2C or direct reading)
-    for i in range(4):
-        gas_status = "Offline"
-        try:
-            # Try to read gas sensor value (implementation depends on actual connection method)
-            if hasattr(bus, 'read_i2c_block_data'):
-                # If using I2C bus
-                data = bus.read_i2c_block_data(ARDUINO_ADDRESS, 0, 8)
-                if i < len(data) // 2:
-                    gas_value = (data[i*2] << 8) | data[i*2 + 1]
-                    if gas_value > 0:  # Valid reading
-                        test_results["gas_sensors"][i] = True
-                        gas_status = "Online"
-            else:
-                # Direct analog reading fallback (dummy test for POST)
-                test_results["gas_sensors"][i] = True
-                gas_status = "Online"
-            print(f"> Checking GAS{i+1}: {gas_status}")
-        except Exception as e:
-            print(f"> Checking GAS{i+1}: {gas_status}")
-            log_message(f"Gas sensor #{i+1} test failed: {e}")
-            
-    # Test temperature/humidity sensors
-    for i in range(4):
-        temp_status = "Offline"
-        try:
-            if dht_devices and i < len(dht_devices):
-                # Try to read temperature
-                temp = dht_devices[i].temperature
-                hum = dht_devices[i].humidity
-                if temp is not None and hum is not None:
-                    test_results["temp_sensors"][i] = True
-                    temp_status = "Online"
-            print(f"> Checking TEMP{i+1}: {temp_status}")
-        except Exception as e:
-            print(f"> Checking TEMP{i+1}: {temp_status}")
-            log_message(f"Temperature sensor #{i+1} test failed: {e}")
-    
-    # Test relays
-    fan_status = "Offline"
+def check_occupancy_status():
+    """Check occupancy status from occupancy module's data"""
     try:
-        # Test fan relay with brief activation
+        with open("/home/admin/Documents/local-data/occupancy-data.json", "r") as f:
+            data = json.load(f)
+            if isinstance(data, list) and len(data) > 0:
+                latest = data[-1]  # Get most recent entry
+                return "end_time" not in latest  # True if occupied (no end_time)
+            return False
+    except Exception as e:
+        log_message(f"Error reading occupancy data: {e}")
+        return False
+
+def control_fan(aqi_values, dht_readings):
+    """Fan control based on occupancy only"""
+    global fan_timer
+    current_time = time.time()
+    
+    # Check occupancy status
+    is_occupied = check_occupancy_status()
+    
+    # Fan control logic
+    if is_occupied:
+        # Keep fan running while occupied
         lgpio.gpio_write(h, FAN_PIN, 1)
-        time.sleep(0.2)
+        fan_timer = current_time + FAN_EXIT_DELAY
+    elif current_time < fan_timer:
+        # Keep fan running during exit delay
+        lgpio.gpio_write(h, FAN_PIN, 1)
+    else:
+        # Turn off fan after delay
         lgpio.gpio_write(h, FAN_PIN, 0)
-        test_results["fan_relay"] = True
-        fan_status = "Online"
-        print(f"> Checking Fan Relay: {fan_status}")
-    except Exception as e:
-        print(f"> Checking Fan Relay: {fan_status}")
-        log_message(f"Fan relay test failed: {e}")
-    
-    freshener_status = "Offline"
-    try:
-        # Test freshener relay with brief activation
-        lgpio.gpio_write(h, FRESHENER_PIN, 1)
-        time.sleep(0.2)
-        lgpio.gpio_write(h, FRESHENER_PIN, 0)
-        test_results["freshener_relay"] = True
-        freshener_status = "Online"
-        print(f"> Checking Freshener Relay: {freshener_status}")
-    except Exception as e:
-        print(f"> Checking Freshener Relay: {freshener_status}")
-        log_message(f"Freshener relay test failed: {e}")
-    
-    # Check local storage
-    storage_status = "Offline"
-    try:
-        os.makedirs(os.path.dirname(LOCAL_FILE), exist_ok=True)
-        test_results["local_storage"] = True
-        storage_status = "Online"
-        print(f"> Checking Local Storage: {storage_status}")
-    except Exception as e:
-        print(f"> Checking Local Storage: {storage_status}")
-        log_message(f"Local storage test failed: {e}")
-    
-    # Check MongoDB connectivity
-    mongodb_status = "Offline"
-    if collection is not None:
-        try:
-            collection.find_one()
-            test_results["mongodb_connection"] = True
-            mongodb_status = "Online"
-            print(f"> Checking MongoDB: {mongodb_status}")
-        except Exception as e:
-            print(f"> Checking MongoDB: {mongodb_status}")
-            log_message(f"MongoDB connection test failed: {e}")
-    else:
-        print(f"> Checking MongoDB: {mongodb_status}")
-        log_message("MongoDB not connected, using local storage only")
-    
-    # Return overall result
-    all_okay = (
-        any(test_results["gas_sensors"]) and  # At least one gas sensor working
-        any(test_results["temp_sensors"]) and  # At least one temp sensor working
-        test_results["fan_relay"] and
-        test_results["freshener_relay"] and
-        test_results["local_storage"]
-        # We don't require MongoDB to be working
-    )
-    
-    if all_okay:
-        log_message("POST completed successfully. All essential systems operational.")
-    else:
-        log_message("POST completed with errors. Some systems may not function properly.")
-    
-    return all_okay
-
-def read_mq135():
-    """Read AQI from Arduino Mega over serial."""
-    if ser is None:
-        return [0] * 4
-        
-    try:
-        ser.flush()  # Clear buffer
-        line = ser.readline().decode('utf-8').strip()
-        if line:
-            try:
-                aqi_values = [int(x) for x in line.split(',')]
-                if len(aqi_values) == 4 and all(0 <= x <= 500 for x in aqi_values):
-                    return aqi_values
-            except ValueError:
-                log_message(f"Invalid serial data: {line}")
-        return [0] * 4
-    except Exception as e:
-        log_message(f"Serial error: {e}")
-        return [0] * 4
-
-def read_dht22():
-    """Read temperature and humidity from DHT22 sensors."""
-    readings = []
-    for i, sensor in enumerate(dht_sensors):
-        try:
-            temp = sensor.temperature
-            hum = sensor.humidity
-            readings.append({"temp": temp, "hum": hum})
-        except Exception as e:
-            log_message(f"DHT22 {i+1} error: {e}")
-            readings.append({"temp": 0, "hum": 0})
-    return readings
-
-def control_fan(aqi_values):
-    """Control exhaust fan based on AQI."""
-    max_aqi = max(aqi_values)
-    lgpio.gpio_write(h, FAN_PIN, 1 if max_aqi > 300 else 0)
 
 def control_freshener(aqi_values):
-    """Control air freshener based on AQI or timer."""
-    global last_spray
+    """Enhanced freshener control with occupancy-based triggering"""
+    global last_spray, freshener_timer
     current_time = time.time()
-    max_aqi = max(aqi_values)
-    if max_aqi > 300 or (current_time - last_spray) >= SPRAY_INTERVAL:
+    
+    # Check occupancy status change
+    is_occupied = check_occupancy_status()
+    
+    if not is_occupied and current_time >= freshener_timer:
+        # Trigger freshener after exit delay
         lgpio.gpio_write(h, FRESHENER_PIN, 1)
         time.sleep(SPRAY_DURATION)
         lgpio.gpio_write(h, FRESHENER_PIN, 0)
         last_spray = current_time
+        freshener_timer = float('inf')  # Reset timer
 
 # Save to local JSON
 def save_to_local_json(data):
@@ -444,11 +328,14 @@ def save_to_local_json(data):
 def log_data(aqi_values, dht_readings):
     """Log data to both MongoDB and local JSON file simultaneously."""
     global client, db, collection
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now()
     data = {
         "timestamp": timestamp,
+        "timestamp_iso": timestamp.isoformat(),  # Added ISO format timestamp for consistency
         "aqi": {f"GAS{i+1}": aqi_values[i] for i in range(4)},
-        "dht": {f"TEMP{i+1}": dht_readings[i] for i in range(4)}
+        "dht": {f"TEMP{i+1}": dht_readings[i] for i in range(4)},
+        "max_aqi": max(aqi_values),  # Added for easy querying
+        "avg_temp": sum(r['temp'] for r in dht_readings) / len(dht_readings)  # Added average temperature
     }
     
     # Always save to local storage first
@@ -458,13 +345,13 @@ def log_data(aqi_values, dht_readings):
     if collection is not None:
         try:
             collection.insert_one(data)
-            log_message("Data also saved to MongoDB successfully.")
+            log_message("Data saved to MongoDB successfully.")
         except Exception as e:
             log_message(f"MongoDB logging error: {e}. Data saved locally only.")
             client = None
             db = None
             collection = None
-    
+
     return True
 
 def display_options():
@@ -477,8 +364,13 @@ def display_options():
     print("\nAuto-refresh in 5 seconds...")
 
 def start_monitoring():
-    """Start the continuous monitoring process."""
-    global ser
+    """Modified monitoring process with simplified fan control"""
+    global ser, last_spray, fan_timer, freshener_timer
+    
+    # Initialize timers
+    fan_timer = 0
+    freshener_timer = 0
+    last_spray = 0
     
     # Ensure we have a serial connection
     if ser is None:
@@ -506,9 +398,14 @@ def start_monitoring():
             # Read and process sensor data
             aqi_values = read_mq135()
             dht_readings = read_dht22()
-            control_fan(aqi_values)
+            
+            # Simplified control functions
+            control_fan(aqi_values, dht_readings)
             control_freshener(aqi_values)
-            log_data(aqi_values, dht_readings)
+            
+            # Update freshener timer on occupancy change
+            if not check_occupancy_status():
+                freshener_timer = current_time + FRESHENER_EXIT_DELAY
             
             # Format the display line
             temp_summary = ", ".join([f"TEMP{i+1}: {r['temp']:.1f}°C" for i, r in enumerate(dht_readings)])
