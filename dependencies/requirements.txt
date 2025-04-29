@@ -1,8 +1,8 @@
 # ===========================================
 # Database Dependencies
 # ===========================================
-pymongo>=4.12.0
-bson>=0.5.10
+pymongo[srv]>=4.6.0    # Updated to include srv support
+python-bson>=0.5.10    # Removed conflicting bson package
 
 # ===========================================
 # System and Utility Dependencies
@@ -17,7 +17,7 @@ pytz>=2025.2
 # ===========================================
 # GPIO and Hardware Control
 RPi.GPIO>=0.7.1
-lgpio==0.2.2.0 
+lgpio==0.2.2.0
 
 # Serial Communication for Arduino
 pyserial>=3.5
@@ -36,17 +36,16 @@ black>=24.0.0
 # ===========================================
 # Installation Notes
 # ===========================================
-# 1. System requirements:
+# 1. First uninstall conflicting packages:
+#    pip uninstall bson pymongo
+#    pip uninstall python-bson  # if installed
+
+# 2. System requirements:
 #    - For GPIO: sudo apt install python3-lgpio
 #    - For DHT22: sudo apt install libgpiod2
-#    - For PIGPIO: sudo apt install python3-pigpio pigpio
 
-# 2. Enable services:
-#    sudo systemctl enable pigpiod
-#    sudo systemctl start pigpiod
-
-# 3. Run installation:
-#    pip3 install -r requirements.txt
+# 3. Install Dependencies:
+#    pip install -r requirements.txt
 
 # 4. Run with sudo:
 #    sudo python3 <module>-mod-main.py
