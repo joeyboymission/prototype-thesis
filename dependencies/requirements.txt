@@ -1,7 +1,8 @@
 # ===========================================
 # Database Dependencies
 # ===========================================
-pymongo[srv]>=4.6.0    # Already includes bson
+pymongo==4.5.0    # Use specific version that works with Pi
+dnspython>=2.3.0  # Required for SRV connection strings
 
 # ===========================================
 # System and Utility Dependencies
@@ -9,7 +10,7 @@ pymongo[srv]>=4.6.0    # Already includes bson
 psutil>=5.9.0
 tabulate>=0.9.0
 python-dateutil>=2.9.0
-pytz>=2025.2
+pytz>=2023.3
 
 # ===========================================
 # Hardware Interface Dependencies
@@ -23,25 +24,23 @@ pyserial>=3.5
 
 # DHT22 Temperature/Humidity Sensors
 adafruit-circuitpython-dht>=4.0.7
-adafruit-blinka>=8.32.0
+adafruit-blinka>=8.20.1
 
 # ===========================================
 # Development and Testing
 # ===========================================
 pytest>=7.0.0
-pylint>=3.0.0
-black>=24.0.0
+pylint>=2.17.0
+black>=23.1.0
 
 # ===========================================
 # Installation Notes
 # ===========================================
-# 1. First uninstall conflicting packages:
-#    pip uninstall bson pymongo
-#    pip uninstall python-bson  # if installed
+# 1. First fix any conflicting packages:
+#    pip uninstall -y bson pymongo python-bson
 
 # 2. System requirements:
-#    - For GPIO: sudo apt install python3-lgpio
-#    - For DHT22: sudo apt install libgpiod2
+#    sudo apt install python3-lgpio libgpiod2 python3-gpiozero
 
 # 3. Install Dependencies:
 #    pip install -r requirements.txt

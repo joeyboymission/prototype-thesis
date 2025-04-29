@@ -496,20 +496,6 @@ def start_monitoring():
             ready, _, _ = select.select([sys.stdin], [], [], 1)
             if ready:
                 choice = input().strip()
-                if choice == "1":
-                    log_message("Manual refresh")
-                    continue
-                elif choice == "2":
-                    log_message("Manual data logging")
-                    log_data(aqi_values, dht_readings)
-                elif choice == "3":
-                    log_message("Returning to menu")
-                    break
-            
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        log_message("Monitoring stopped")
-    finally:
         # Turn off outputs
         lgpio.gpio_write(h, FAN_PIN, 0)
         lgpio.gpio_write(h, FRESHENER_PIN, 0)
@@ -522,16 +508,12 @@ def start_monitoring():
                 pass
 
 def main():
-    """Main menu and program flow"""
-    # Explicitly try MongoDB connection at startup
-    if MONGODB_AVAILABLE:
-        db_connected = check_mongo_connection()
-        if db_connected:
-            log_message("MongoDB connection active - data will be sent to both local and remote storage")
-        else:
-            log_message("MongoDB connection failed - using local storage only")
+    # Try connecting to MongoDB
+    db_connected = check_mongo_connection()
+    if db_connected:
+        log_message("MongoDB connection active - data will be sent to both local and remote storage")
     else:
-        log_message("MongoDB libraries not available - using local storage only")
+        log_message("Using local storage only")
     
     try:
         while True:
