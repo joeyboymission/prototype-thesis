@@ -7,6 +7,7 @@ import json
 import datetime
 import collections
 import glob
+import random  # Make sure random is imported for simulated readings
 
 # Try to import hardware dependencies with fallbacks
 try:
@@ -36,11 +37,14 @@ except ImportError:
     print("Warning: adafruit_dht library not available")
     DHT_AVAILABLE = False
 
-# MongoDB Connection Setup
-MONGODB_AVAILABLE = False
+# MongoDB Connection Setup - Fixed to properly detect availability
 try:
+    # Import directly without try/except to force an immediate error if not available
     from pymongo import MongoClient
     from pymongo.errors import ServerSelectionTimeoutError
+    
+    # If we got here, the imports worked
+    MONGODB_AVAILABLE = True
     
     # Custom JSON encoder for MongoDB ObjectId
     class MongoJSONEncoder(json.JSONEncoder):
@@ -49,11 +53,12 @@ try:
                 return str(obj)
             return super().default(obj)
     
-    MONGODB_AVAILABLE = True
     print("MongoDB libraries available")
-except ImportError:
-    print("Warning: pymongo not available. Using local storage only.")
+except ImportError as e:
+    MONGODB_AVAILABLE = False
+    print(f"Warning: MongoDB not available: {e}. Using local storage only.")
     
+    # Fallback encoder if MongoDB is not available
     class MongoJSONEncoder(json.JSONEncoder):
         pass
 
@@ -192,7 +197,6 @@ def find_arduino_serial_port():
 
 # Simulated sensor readings for testing
 def get_simulated_readings():
-    import random
     # Simulate air quality readings (0-500 range)
     aqi_values = [random.randint(0, 500) for _ in range(4)]
     
@@ -250,22 +254,26 @@ def read_dht22():
 
 def check_mongo_connection():
     """Properly try to connect to MongoDB with better error handling"""
-    global client, db, collection, MONGODB_AVAILABLE  # Use consistent variable name
+    global client, db, collection, MONGODB_AVAILABLE
     
     if not MONGODB_AVAILABLE:
         log_message("MongoDB support not available, using local storage only.")
         return False
-        
+    
     try:
-        log_message("Connecting to MongoDB...")
+        log_message("Attempting to connect to MongoDB...")
+        # Use timeout to avoid hanging
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        client.admin.command('ping')  # Test if we can actually reach the server
+        # Test connection with explicit ping
+        client.admin.command('ping')
+        
+        # If we got here, connection worked
         db = client["Smart_Cubicle"]
-        collection = db["odor_module"]  # Use consistent variable name
-        log_message("Connected to MongoDB successfully.")
+        collection = db["odor_module"]
+        log_message("Connected to MongoDB successfully!")
         return True
     except Exception as e:
-        log_message(f"Warning: Failed to connect to MongoDB: {e}. Using local storage only.")
+        log_message(f"MongoDB connection error: {e}")
         client = None
         db = None
         collection = None
@@ -337,7 +345,8 @@ def save_to_local_json(data):
         return False
 
 def log_data(aqi_values, dht_readings):
-    global collection  # Add global declaration to fix the UnboundLocalError
+    """Log sensor data to local JSON and MongoDB if available"""
+    global collection, client, db
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     data = {
@@ -374,15 +383,20 @@ def log_data(aqi_values, dht_readings):
     # Try MongoDB if available
     if collection is not None:
         try:
-            collection.insert_one(data)
-            log_message("Data also saved to MongoDB")
+            result = collection.insert_one(data)
+            log_message(f"Data also saved to MongoDB (ID: {result.inserted_id})")
+            return True
         except Exception as e:
             log_message(f"MongoDB error: {e}")
             # Reset MongoDB connection on error
-            global client, db
             collection = None
             db = None
             client = None
+            
+            # Try to reconnect
+            check_mongo_connection()
+    
+    return True
 
 def setup_dht_sensors():
     """Initialize DHT sensors with proper error handling"""
@@ -508,12 +522,16 @@ def start_monitoring():
                 pass
 
 def main():
-    # Try connecting to MongoDB
-    db_connected = check_mongo_connection()
-    if db_connected:
-        log_message("MongoDB connection active - data will be sent to both local and remote storage")
+    """Main menu and program flow"""
+    # Explicitly try MongoDB connection at startup
+    if MONGODB_AVAILABLE:
+        db_connected = check_mongo_connection()
+        if db_connected:
+            log_message("MongoDB connection active - data will be sent to both local and remote storage")
+        else:
+            log_message("MongoDB connection failed - using local storage only")
     else:
-        log_message("Using local storage only")
+        log_message("MongoDB libraries not available - using local storage only")
     
     try:
         while True:
