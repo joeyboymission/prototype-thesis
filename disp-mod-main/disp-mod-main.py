@@ -205,24 +205,23 @@ def save_dispenser_data(dispenser_data):
 
 def should_save_reading(current_reading):
     """Determine if the current reading should be saved based on changes"""
-    if previous_readings is None:
+    if not previous_readings:
         return True
     
-    # Check for significant changes in any container
+    # Check for whole number changes in volume
     for container in ["CONT1", "CONT2", "CONT3", "CONT4"]:
-        curr_vol = current_reading["data"][container]["remaining_volume_ml"]
-        prev_vol = previous_readings["data"][container]["remaining_volume_ml"]
+        prev_vol = int(previous_readings["data"][container]["remaining_volume_ml"])
+        curr_vol = int(current_reading["data"][container]["remaining_volume_ml"])
         
-        # If volume change is 1ml or more, save the reading
-        if abs(curr_vol - prev_vol) >= 1.0:
+        # If there's a change in the whole number part
+        if prev_vol != curr_vol:
             return True
     
     return False
 
 def log_message(message):
     """Log a message with timestamp"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {message}")
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")
 
 def setup_gpio():
     """Initialize GPIO for ultrasonic sensors"""

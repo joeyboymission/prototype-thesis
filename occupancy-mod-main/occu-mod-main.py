@@ -162,6 +162,12 @@ def save_visitor_data(visitor_data):
     mongodb_success = False
     local_success = False
     
+    # Only save complete records with all required fields
+    required_fields = ["type", "visitor_id", "start_time", "end_time", "duration"]
+    if not all(field in visitor_data for field in required_fields):
+        log_message("Error: Incomplete visitor data, skipping save")
+        return False
+    
     # Try MongoDB first
     if MONGODB_AVAILABLE and mongo_collection is not None:
         try:
@@ -172,8 +178,37 @@ def save_visitor_data(visitor_data):
             log_message(f"Error saving to MongoDB: {e}")
     
     # Then try local storage
-    local_success = save_to_local_storage(visitor_data)
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(DATA_DIR, exist_ok=True)
+        
+        # Load existing data
+        existing_data = []
+        if os.path.exists(LOCAL_FILE):
+            try:
+                with open(LOCAL_FILE, 'r') as f:
+                    existing_data = json.load(f)
+            except json.JSONDecodeError:
+                log_message("Warning: Local file corrupted, creating new")
+        
+        # Ensure data is a list
+        if not isinstance(existing_data, list):
+            existing_data = []
+        
+        # Append new data
+        existing_data.append(visitor_data)
+        
+        # Save updated data atomically
+        temp_file = LOCAL_FILE + ".tmp"
+        with open(temp_file, 'w') as f:
+            json.dump(existing_data, cls=MongoJSONEncoder, fp=f, indent=4)
+        os.replace(temp_file, LOCAL_FILE)
+        
+        local_success = True
+    except Exception as e:
+        log_message(f"Error saving to local storage: {e}")
     
+    # Log appropriate status message
     if mongodb_success and local_success:
         log_message("DATA SAVED TO REMOTE AND LOCAL")
     elif local_success:
@@ -260,53 +295,48 @@ def record_entry():
     
     visitor_count += 1
     current_visitor_id = visitor_count
-    current_time = time.time()
-    current_start_time = current_time
+    current_start_time = time.time()
     current_state = STATE_OCCUPIED
     
-    # Create visit record
-    entry = get_data_template()
+    # Single beep for entry
+    beep_buzzer(SHORT_BEEP)
     
-    # Save data
-    save_visitor_data(entry)
-    
-    # Audio feedback
-    double_beep()
-    
-    # Log status
-    log_message(f"Visitor Count: {visitor_count} | Status: {current_state} | Visitor ID: {current_visitor_id}")
+    display_status()
 
 def record_exit():
     """Record visitor exit"""
-    global current_state, current_start_time, current_visitor_id
+    global current_state, current_visitor_id, current_start_time
     
     if current_state != STATE_OCCUPIED or current_start_time is None:
-        log_message("Warning: Attempting to record exit but no active visitor")
+        log_message("Warning: Exit recorded without matching entry")
         return
     
-    current_time = time.time()
-    duration = current_time - current_start_time
+    # Calculate duration
+    end_time = time.time()
+    duration = int(end_time - current_start_time)
+    
+    # Create visit record
+    visit_data = {
+        "type": "visit",
+        "visitor_id": current_visitor_id,
+        "start_time": datetime.datetime.fromtimestamp(current_start_time).isoformat(),
+        "end_time": datetime.datetime.fromtimestamp(end_time).isoformat(),
+        "duration": duration
+    }
+    
+    # Save the visit data
+    if save_visitor_data(visit_data):
+        log_message(f"Visit recorded - Duration: {format_duration(duration)}")
+    
+    # Double beep for exit
+    double_beep()
+    
+    # Reset state
     current_state = STATE_VACANT
-    
-    # Create visit record with exit info
-    entry = get_data_template()
-    entry["visitor_id"] = current_visitor_id
-    entry["start_time"] = datetime.datetime.fromtimestamp(current_start_time).strftime("%Y-%m-%dT%H:%M:%S.%f")
-    entry["end_time"] = datetime.datetime.fromtimestamp(current_time).strftime("%Y-%m-%dT%H:%M:%S.%f")
-    entry["duration"] = int(duration)
-    
-    # Save data
-    save_visitor_data(entry)
-    
-    # Audio feedback
-    beep_buzzer(LONG_BEEP)
-    
-    # Log status
-    log_message(f"Visitor Count: {visitor_count} | Status: {current_state} | Duration: {format_duration(duration)}")
-    
-    # Reset current tracking variables
     current_start_time = None
     current_visitor_id = None
+    
+    display_status()
 
 def signal_handler(signum, frame):
     """Handle Ctrl+C to exit cleanly"""
