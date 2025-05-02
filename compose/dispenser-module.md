@@ -60,7 +60,7 @@ Now this will be the expected dislay in the CLI
 Checking the connection to Database...
 Database Connected Succesfully!
 Detecting the initial volume for each container...
-CONT1: [distance cm] [volume ml] | CONT2: [distance cm] [volume ml] | CONT3: [distance cm] [volume ml] | CONT4: [distance cm] [volume ml]
+CONT1: [distance cm] [volume ml] [precentage %] | CONT2: [distance cm] [volume ml] [precentage %] | CONT3: [distance cm] [volume ml] [precentage %] | CONT4: [distance cm] [volume ml] [precentage %]
 The sensors are ready!
 ```
 
@@ -71,24 +71,25 @@ This is to avoid flooding the database: Remote and Local instead there is a cert
 
 The program will scan continously like this
 ```
-[2025-04-29 08:59:10] CONT1: [distance cm] [volume ml] | CONT2: [distance cm] [volume ml] | CONT3: [distance cm] [volume ml] | CONT4: [distance cm] [volume ml]
+[2025-04-29 08:59:10] CONT1: [distance cm] [volume ml] [precentage %] | CONT2: [distance cm] [volume ml] [precentage %] | CONT3: [distance cm] [volume ml] [precentage %] | CONT4: [distance cm] [volume ml] [precentage %]
 ```
 the logging in every 5 seconds delay, this is continously check if there is a changes on each containter but no saving to the database: remote and local
 
-if there is a significant change on the reading like from the whole number not on the decimal therefore it will save to the database
+if there is a significant change on the reading like from the whole number not on the decimal therefore it will save to the database: remote and local
+Note whole number not the decimal is the reference point of saving a data to the remote, if there is a significant change in the reading from the whole number then saved to both remote and local database, if decimal only do not. Because sensors have some tolerance error.
 For example
 ```
-[2025-04-29 08:59:10] CONT1: 15.25 cm 450.50 ml | CONT2: 12.75 cm 325.25 ml | CONT3: 18.50 cm 575.75 ml | CONT4: 10.25 cm 250.50 ml
+[2025-05-02 13:58:49] CONT1: 10.97 cm 73.50 ml 10% | CONT2: 8.83 cm 145.99 ml 20% | CONT3: 3.96 cm 352.20 ml 30% | CONT4: 7.42 cm 232.75 ml 40%
 ```
 then the 5 second delay again
 ```
-[2025-04-29 09:04:25] CONT1: 15.25 cm 450.50 ml | CONT2: 12.75 cm 325.25 ml | CONT3: 18.50 cm 575.75 ml | CONT4: 10.25 cm 250.50 ml
+[2025-05-02 13:59:54] CONT1: 10.97 cm 73.50 ml 10% | CONT2: 8.83 cm 145.99 ml 20% | CONT3: 3.96 cm 352.20 ml 30% | CONT4: 7.42 cm 232.75 ml 40%
 ```
 observed that there is no changes happens, but what if somone dispense
 ```
-[2025-04-29 09:14:25] CONT1: 15.25 cm 445.50 ml | CONT2: 12.75 cm 320.25 ml | CONT3: 18.50 cm 570.75 ml | CONT4: 10.25 cm 245.50 ml
+[2025-05-02 14:01:25] CONT1: 10.97 cm 73.50 ml 10% | CONT2: 8.83 cm 145.99 ml 20% | CONT3: 3.96 cm 352.20 ml 30% | CONT4: 7.42 cm 232.75 ml 40%
 ```
-note that the readings changes, therefore there somone dispense on the reading, therefore saved to the database: remote and local (note that remote is much priority from the local), but at least 1 of the container changes then still record to the database with a message
+note that the readings changes (this is a sample only make the logic in a realistic way as possible), therefore there somone dispense on the reading, therefore saved to the database: remote and local (note that remote is much priority from the local), but at least 1 of the container changes then still record to the database with a message
 ```
 Status: DATA SAVED TO REMOTE AND LOCAL
 ```

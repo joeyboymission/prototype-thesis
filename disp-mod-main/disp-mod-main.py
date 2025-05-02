@@ -383,11 +383,13 @@ def main():
                 else:
                     data["data"][container]["previous_volume_ml"] = data["data"][container]["remaining_volume_ml"]
             
-            # Check if this reading should be saved
+            # Always log the readings to show current state
+            log_sensor_readings(data)
+            
+            # Only save if there's a significant whole number change
             if should_save_reading(data):
                 save_dispenser_data(data)
-                # Log the readings after saving
-                log_sensor_readings(data)
+                log_message("Status: DATA SAVED TO REMOTE AND LOCAL")
             
             # Update previous readings
             previous_readings = data

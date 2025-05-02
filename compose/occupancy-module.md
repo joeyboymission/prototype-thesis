@@ -10,7 +10,7 @@ This module is designed to:
 The occupancy system uses:
 - Proximity sensor, that when a visitor passes to the sensor the Buzzer will beep once indicating that the presense is `OCCUPIED`. But if the visitor goes out from the cubicle again the there is a double beep indicating that this will be a `VACANT`.
 
-At the first run of the module, the system will check if the remote database MongoDB by pinging the remote server checking if there is an existing collection named `occupancy` on the remote database and also the system will check if there is a local data saved on the default location `local-data` the file named `occupancy-data.json`. The priority of checking is the remote and if the remote is uptime then check if there is a collection named `occupancy`. If the remote server is not enabled or online then use the local database instead
+At the first run of the module, the system will check if the remote database MongoDB by pinging the remote server checking if there is an existing collection named `occupancy` on the remote database and also the system will check if there is a local data saved on the default location `local-data` the file named `occupancy-data.json` the default directory is `/home/admin/Documents/local-data` if the `local-data` folder does not exist, create it. If the file does not exist, create it. The priority of checking is the remote and if the remote is uptime then check if there is a collection named `occupancy`. If the remote server is not enabled or online then use the local database instead
 
 If done checking the databases: remote and local, then resume from the last counting on how many visitor has been count fromt the remote or local database (note the priority is always the remote database).
 
