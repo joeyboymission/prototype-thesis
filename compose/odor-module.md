@@ -29,12 +29,21 @@ The script follows this sequence during startup:
 2. Verify and set permissions for read/write access to the USB port
 3. Free the serial connection if needed (kill other processes, restart services)
 4. Check database connectivity (will use both remote and local if online, local-only if remote is offline)
-5. Initialize temperature and odor sensors
-6. Begin data collection and logging
+5. For the remote database (MongoDB) the collection name is `odor_module` and the database name is `Smart_Cubicle`
+6. Check local storage folder named `local-data` that is located on the `/home/admin/Documents/local-data` to save the `odor-data.json` file, if the folder does not exist, create it. If the file does not exist, create it.
+7. Initialize temperature and odor sensors
+8. Begin data collection and logging
 
 The initialization would look like this as an example
 ```
-
+Checking the connection to Database..
+Database Connected Succesfully!
+Restored the last previous updated data from: Remote and Local
+Checking the Serial Connection (Gas Sensor)..
+Serial Connection Established!
+Checking Temperature Sensor Connection..
+Temperature Sensor Connection Established!
+The sensors are ready!
 ```
 
 ### Data Format
