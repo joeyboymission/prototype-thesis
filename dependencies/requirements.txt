@@ -18,6 +18,7 @@ pytz>=2023.3
 # GPIO and Hardware Control
 RPi.GPIO>=0.7.1
 lgpio==0.2.2.0
+smbus2>=0.4.2  # I2C interface for MQ135 sensor
 
 # Serial Communication for Arduino
 pyserial>=3.5

@@ -33,7 +33,7 @@ except ImportError:
 # Settings
 BAUD_RATE = 9600
 SERIAL_TIMEOUT = 5
-DATA_DIR = "local-data"
+DATA_DIR = "/home/admin/Documents/local-data"
 LOCAL_FILE = os.path.join(DATA_DIR, "odor-data.json")
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
 LOGGING_INTERVAL = 10  # seconds
@@ -73,139 +73,215 @@ def log_message(message):
     print(f"{timestamp} {message}")
 
 def scan_serial_ports():
-    """Scan for available serial ports"""
+    """Scan for available serial ports with fallback methods"""
     log_message("Scanning serial ports...")
-    command = ["ls", "/dev/tty*"]
     
+    # Method 1: Try using glob (most reliable)
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        all_ports = result.stdout.strip().split('\n')
+        # Common USB-Serial patterns
+        patterns = [
+            '/dev/ttyUSB*',
+            '/dev/ttyACM*',
+            '/dev/ttyAMA*',
+            'COM[0-9]*'  # For Windows
+        ]
         
-        # Filter for USB and ACM ports
-        usb_ports = [port for port in all_ports if 'USB' in port]
-        acm_ports = [port for port in all_ports if 'ACM' in port]
-        ports = usb_ports + acm_ports
+        ports = []
+        for pattern in patterns:
+            ports.extend(glob.glob(pattern))
         
-        if not ports:
-            log_message("No USB serial ports found.")
-            return []
+        if ports:
+            log_message(f"Found ports using glob: {', '.join(ports)}")
+            return ports
+    except Exception as e:
+        log_message(f"Glob scan error: {e}")
+    
+    # Method 2: Try direct device check
+    try:
+        potential_ports = [
+            '/dev/ttyUSB0',
+            '/dev/ttyUSB1',
+            '/dev/ttyACM0',
+            '/dev/ttyACM1',
+            '/dev/ttyAMA0'
+        ]
         
-        log_message(f"Found ports: {', '.join(ports)}")
-        return ports
-    except subprocess.CalledProcessError as e:
-        log_message(f"Error scanning ports: {e}")
-        return []
+        ports = [port for port in potential_ports if os.path.exists(port)]
+        if ports:
+            log_message(f"Found ports using direct check: {', '.join(ports)}")
+            return ports
+    except Exception as e:
+        log_message(f"Direct check error: {e}")
+    
+    # Method 3: Last resort - try subprocess with explicit paths
+    try:
+        result = subprocess.run(['ls', '/dev/ttyUSB0'], capture_output=True, text=True)
+        if result.returncode == 0:
+            log_message("Found /dev/ttyUSB0 using subprocess")
+            return ['/dev/ttyUSB0']
+    except Exception as e:
+        log_message(f"Subprocess check error: {e}")
+    
+    log_message("No serial ports found using any method")
+    return []
 
 def fix_port_permissions(port):
     """Fix permission issues for serial ports"""
+    log_message(f"Fixing permissions for {port}...")
+    
     try:
-        log_message(f"Fixing permissions for {port}...")
-        
-        # Kill processes using the port
+        # Kill any processes using the port
         log_message("Killing processes using the port...")
-        subprocess.run(["sudo", "lsof", port], capture_output=True, check=False)
+        subprocess.run(['sudo', 'fuser', '-k', port], capture_output=True, check=False)
+        time.sleep(1)
         
-        # Restart serial service
+        # Reset USB device
         port_base = os.path.basename(port)
-        log_message(f"Restarting serial service for {port_base}...")
-        subprocess.run(["sudo", "systemctl", "restart", f"serial-getty@{port_base}"], 
-                      capture_output=True, check=False)
+        if 'USB' in port_base:
+            bus_device = subprocess.run(['readlink', '-f', port], capture_output=True, text=True, check=False).stdout.strip()
+            if bus_device:
+                usb_path = os.path.dirname(os.path.dirname(bus_device))
+                if os.path.exists(os.path.join(usb_path, 'authorized')):
+                    log_message("Resetting USB device...")
+                    subprocess.run(['sudo', 'sh', '-c', f'echo 0 > {usb_path}/authorized'], check=False)
+                    time.sleep(1)
+                    subprocess.run(['sudo', 'sh', '-c', f'echo 1 > {usb_path}/authorized'], check=False)
+                    time.sleep(2)
+        
+        # Set permissions
+        log_message("Setting port permissions...")
+        subprocess.run(['sudo', 'chmod', '666', port], check=False)
         
         # Add current user to dialout group
         username = os.getenv('USER', 'pi')
         log_message(f"Adding user {username} to dialout group...")
-        subprocess.run(["sudo", "usermod", "-a", "-G", "dialout", username], 
-                      capture_output=True, check=False)
+        subprocess.run(['sudo', 'usermod', '-a', '-G', 'dialout', username], check=False)
         
-        # Change ownership and permissions
-        log_message("Setting port permissions...")
-        subprocess.run(["sudo", "chown", f"{username}:dialout", port], 
-                      capture_output=True, check=False)
-        subprocess.run(["sudo", "chmod", "660", port], 
-                      capture_output=True, check=False)
-        
-        log_message(f"Fixed permissions for {port}")
         return True
     except Exception as e:
         log_message(f"Error fixing permissions: {e}")
         return False
 
-def check_port_permissions(port):
-    """Check if we have permission to access the port"""
-    try:
-        test_ser = serial.Serial(port, BAUD_RATE, timeout=1)
-        test_ser.close()
-        log_message(f"Permission verified for {port}")
-        return True
-    except PermissionError:
-        log_message(f"Permission denied for {port}")
-        return False
-    except Exception as e:
-        log_message(f"Error checking port {port}: {e}")
-        return False
+def try_connect_port(port, retries=3):
+    """Try to connect to a port with multiple retries"""
+    global arduino_serial
+    
+    for attempt in range(retries):
+        try:
+            log_message(f"Connection attempt {attempt + 1} for {port}...")
+            
+            # Try to open the port
+            ser = serial.Serial(port, BAUD_RATE, timeout=SERIAL_TIMEOUT)
+            
+            # Test communication
+            ser.write(b'R')  # Send read command
+            time.sleep(0.1)
+            response = ser.readline().decode().strip()
+            
+            if response and ',' in response:  # Verify data format
+                values = response.split(',')
+                if len(values) == 4:  # Expect 4 sensor values
+                    log_message(f"Successfully connected to Arduino on {port}")
+                    return ser
+            
+            ser.close()
+            log_message("Invalid response from device")
+            
+        except serial.SerialException as e:
+            log_message(f"Connection error: {e}")
+            
+            if attempt < retries - 1:
+                log_message("Attempting to fix permissions...")
+                if fix_port_permissions(port):
+                    time.sleep(2)  # Wait for permissions to take effect
+                else:
+                    log_message("Failed to fix permissions")
+            
+        except Exception as e:
+            log_message(f"Unexpected error: {e}")
+        
+        if attempt < retries - 1:
+            log_message(f"Retrying in 2 seconds...")
+            time.sleep(2)
+    
+    return None
 
 def connect_to_arduino():
     """Find and connect to Arduino on available serial ports"""
     global arduino_serial
     
-    # Close existing connection if any
-    if arduino_serial is not None:
-        try:
-            arduino_serial.close()
-        except Exception:
-            pass
-        arduino_serial = None
+    ports = scan_serial_ports()
     
-    # Scan for available ports
-    all_ports = scan_serial_ports()
-    if not all_ports:
+    if not ports:
+        log_message("No serial ports found. Please check if:")
+        log_message("1. The Arduino is properly connected via USB")
+        log_message("2. You have the necessary permissions")
+        log_message("3. The USB cable is working")
         return False
     
-    # Try each port to find Arduino, starting with USB0
-    sorted_ports = sorted(all_ports, key=lambda x: 0 if "USB0" in x else 1)
+    # Sort ports to prioritize USB0
+    ports = sorted(ports, key=lambda x: (
+        0 if 'USB0' in x else
+        1 if 'USB' in x else
+        2 if 'ACM0' in x else
+        3 if 'ACM' in x else
+        4
+    ))
     
-    for port in sorted_ports:
-        try:
-            log_message(f"Trying to connect to {port}...")
-            
-            # Check permissions and fix if needed
-            if not check_port_permissions(port):
-                log_message(f"Attempting to fix permissions for {port}...")
-                if not fix_port_permissions(port):
-                    log_message(f"Failed to fix permissions for {port}, trying next port")
-                    continue
-            
-            # Open port
-            log_message(f"Opening serial connection to {port}...")
-            test_ser = serial.Serial(port, BAUD_RATE, timeout=SERIAL_TIMEOUT)
-            time.sleep(2)  # Arduino resets on serial connection
-            test_ser.reset_input_buffer()
-            
-            # Send test request and check response
-            log_message("Sending test request to Arduino...")
-            test_ser.write(b'r')
-            time.sleep(0.5)
-            
-            line = test_ser.readline().decode('utf-8', errors='ignore').strip()
-            log_message(f"Received from {port}: '{line}'")
-            
-            # Validate response - expecting comma-separated values
-            if ',' in line:
-                values = line.split(',')
-                if len(values) >= 4:  # At least 4 values for gas sensors
-                    log_message(f"Arduino found on {port}")
-                    arduino_serial = test_ser
-                    return True
-            
-            # Not the right device, close it
-            log_message(f"Device on {port} is not the Arduino Mega, closing connection")
-            test_ser.close()
-            
-        except Exception as e:
-            log_message(f"Failed to connect to {port}: {e}")
+    for port in ports:
+        # Try to connect with retries and permission fixing
+        ser = try_connect_port(port)
+        if ser:
+            arduino_serial = ser
+            return True
     
-    log_message("No working Arduino connection found.")
+    log_message("Could not find Arduino on any port")
     return False
+
+def read_gas_sensors():
+    """Read data from MQ135 gas sensors via Arduino"""
+    if not arduino_serial:
+        log_message("Error: No Arduino connection")
+        return [None] * 4
+    
+    try:
+        # Send read command
+        arduino_serial.write(b'R')
+        time.sleep(0.1)
+        
+        # Read response
+        response = arduino_serial.readline().decode().strip()
+        if not response:
+            raise Exception("No response from Arduino")
+        
+        # Parse and validate values
+        values = []
+        for val in response.split(','):
+            try:
+                value = int(val)
+                # Validate range (0-500 is valid range for MQ135)
+                if 0 <= value <= 500:
+                    values.append(value)
+                else:
+                    values.append(None)
+            except ValueError:
+                values.append(None)
+        
+        # Ensure we have 4 values
+        while len(values) < 4:
+            values.append(None)
+        
+        return values[:4]  # Return only first 4 values
+        
+    except Exception as e:
+        log_message(f"Error reading gas sensors: {e}")
+        # Attempt to reconnect on error
+        if "device disconnected" in str(e).lower() or "port is closed" in str(e).lower():
+            log_message("Attempting to reconnect to Arduino...")
+            if connect_to_arduino():
+                log_message("Successfully reconnected to Arduino")
+                return read_gas_sensors()  # Try reading again
+        return [None] * 4
 
 def setup_dht_sensors():
     """Initialize DHT22 sensors"""
@@ -270,6 +346,14 @@ def connect_to_mongodb():
         
         mongo_db = mongo_client["Smart_Cubicle"]
         mongo_collection = mongo_db["odor_module"]
+        
+        # Check if collection exists and has data
+        if mongo_collection.count_documents({}) > 0:
+            log_message("Found existing data in remote database")
+            latest_doc = mongo_collection.find_one(sort=[("timestamp", -1)])
+            if latest_doc:
+                log_message(f"Latest remote reading from: {latest_doc['timestamp']}")
+        
         log_message("Connected to MongoDB successfully!")
         return True
     except Exception as e:
@@ -278,48 +362,6 @@ def connect_to_mongodb():
         mongo_db = None
         mongo_collection = None
         return False
-
-def read_gas_sensors():
-    """Read data from MQ135 gas sensors via Arduino"""
-    global arduino_serial
-    
-    # If no Arduino connection, try to reconnect
-    if arduino_serial is None:
-        log_message("No Arduino connection, attempting to reconnect...")
-        if not connect_to_arduino():
-            log_message("Could not reconnect to Arduino, using simulated data")
-            # Return simulated data if reconnection fails
-            return [random.randint(50, 500) for _ in range(4)]
-    
-    try:
-        # Clear input buffer
-        arduino_serial.reset_input_buffer()
-        
-        # Send request to Arduino
-        arduino_serial.write(b'r')
-        time.sleep(0.5)
-        
-        # Read response
-        line = arduino_serial.readline().decode('utf-8', errors='ignore').strip()
-        
-        if ',' in line:
-            values = [int(val.strip()) for val in line.split(',')]
-            if len(values) >= 4:
-                return values[:4]  # Use first 4 values
-        
-        log_message(f"Invalid reading format: {line}")
-    except Exception as e:
-        log_message(f"Error reading gas sensors: {e}")
-        # Close connection to try again next time
-        try:
-            arduino_serial.close()
-        except:
-            pass
-        arduino_serial = None
-    
-    # Return simulated data on failure
-    log_message("Using simulated gas sensor data")
-    return [random.randint(50, 500) for _ in range(4)]
 
 def read_temp_sensors():
     """Read data from DHT22 temperature sensors"""
@@ -409,15 +451,26 @@ def fix_sensor_data(gas_values, temp_readings):
 def save_to_local_storage(data):
     """Save data to local JSON file"""
     try:
-        os.makedirs(os.path.dirname(LOCAL_FILE), exist_ok=True)
+        # Ensure the directory exists
+        os.makedirs(DATA_DIR, exist_ok=True)
         
         existing_data = []
         if os.path.exists(LOCAL_FILE):
             try:
                 with open(LOCAL_FILE, "r") as f:
                     existing_data = json.load(f)
+                    if existing_data:
+                        log_message(f"Found {len(existing_data)} existing records in local storage")
+                        latest = existing_data[-1]
+                        log_message(f"Latest local reading from: {latest['timestamp']}")
             except json.JSONDecodeError:
                 log_message("Creating new data file (existing file corrupt)")
+        else:
+            log_message("Creating new local data file")
+        
+        # Ensure data has the correct format
+        if not isinstance(existing_data, list):
+            existing_data = []
         
         existing_data.append(data)
         
@@ -577,6 +630,35 @@ def print_initialization_example():
 [2023-07-15 14:30:52] Starting continuous monitoring. Press Ctrl+C to stop.
 """)
 
+def initialize_storage():
+    """Initialize storage system and check existing data"""
+    log_message("Checking storage system...")
+    
+    # Create local data directory if it doesn't exist
+    if not os.path.exists(DATA_DIR):
+        log_message(f"Creating local data directory: {DATA_DIR}")
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+        except Exception as e:
+            log_message(f"Error creating data directory: {e}")
+            return False
+    
+    # Check local file
+    if not os.path.exists(LOCAL_FILE):
+        log_message("Local data file does not exist, will create when first data is saved")
+    else:
+        try:
+            with open(LOCAL_FILE, "r") as f:
+                data = json.load(f)
+                log_message(f"Found {len(data)} existing records in local storage")
+                if data:
+                    latest = data[-1]
+                    log_message(f"Latest local reading from: {latest['timestamp']}")
+        except Exception as e:
+            log_message(f"Error reading local data file: {e}")
+    
+    return True
+
 def main():
     global running
     
@@ -585,8 +667,17 @@ def main():
     
     log_message("=== Odor Module Starting ===")
     
-    # Create data directory
-    os.makedirs(DATA_DIR, exist_ok=True)
+    # Initialize storage system
+    if not initialize_storage():
+        log_message("Failed to initialize storage system")
+        return
+    
+    # Connect to MongoDB first
+    mongodb_connected = connect_to_mongodb()
+    if mongodb_connected:
+        log_message("MongoDB connected. Data will be saved to remote and local storage.")
+    else:
+        log_message("No MongoDB connection. Data will be saved to local storage only.")
     
     # Initial setup
     arduino_connected = connect_to_arduino()
@@ -596,12 +687,6 @@ def main():
     dht_available = setup_dht_sensors()
     if not dht_available:
         log_message("Warning: No DHT sensors available. Using simulated temperature data.")
-    
-    mongodb_connected = connect_to_mongodb()
-    if mongodb_connected:
-        log_message("MongoDB connected. Data will be saved to remote and local storage.")
-    else:
-        log_message("No MongoDB connection. Data will be saved to local storage only.")
     
     log_message("Starting continuous monitoring. Press Ctrl+C to stop.")
     
