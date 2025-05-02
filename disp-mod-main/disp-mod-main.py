@@ -50,9 +50,9 @@ previous_readings = None  # Previous readings
 def get_data_template():
     """Initialize data format for a dispenser reading"""
     return {
-        "_id": str(ObjectId()) if MONGODB_AVAILABLE else f"local_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "_id": str(ObjectId()) if MONGODB_AVAILABLE else f"local_{datetime.now().strftime('%Y%m%d%H%M%S')}",
         "reading": reading_counter + 1,
-        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "data": {
             "CONT1": {
                 "distance_cm": 0.0,
@@ -210,7 +210,7 @@ def should_save_reading(current_reading):
 
 def log_message(message):
     """Log a message with timestamp"""
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}")
 
 def setup_gpio():
@@ -311,53 +311,77 @@ def signal_handler(signum, frame):
 def main():
     global running, reading_counter, previous_readings
     
-    # Setup signal handler for Ctrl+C
-    signal.signal(signal.SIGINT, signal_handler)
-    
-    log_message("=== Dispenser Module Starting ===")
-    
-    # Initialize storage system
-    if not initialize_storage():
-        log_message("Failed to initialize storage system")
-        return
-    
-    # Connect to MongoDB first
-    mongodb_connected = connect_to_mongodb()
-    if mongodb_connected:
-        log_message("MongoDB connected. Data will be saved to remote and local storage.")
-    else:
-        log_message("No MongoDB connection. Data will be saved to local storage only.")
-    
-    # Initialize GPIO
-    if not setup_gpio():
-        log_message("Failed to initialize GPIO")
-        return
-    
-    log_message("Detecting initial volume for each container...")
-    
-    while running:
-        # Create data template
-        data = get_data_template()
+    try:
+        # Setup signal handler for Ctrl+C
+        signal.signal(signal.SIGINT, signal_handler)
         
-        # Read all containers
-        for i, (trigger, echo) in enumerate(zip(TRIGGERS, ECHOS)):
-            container = f"CONT{i+1}"
-            distance = measure_distance(trigger, echo)
-            volume = calculate_volume(container, distance)
+        log_message("=== Dispenser Module Starting ===")
+        
+        # Initialize storage system
+        if not initialize_storage():
+            log_message("Failed to initialize storage system")
+            return
+        
+        # Connect to MongoDB first
+        mongodb_connected = connect_to_mongodb()
+        if mongodb_connected:
+            log_message("MongoDB connected. Data will be saved to remote and local storage.")
+        else:
+            log_message("No MongoDB connection. Data will be saved to local storage only.")
+        
+        # Initialize GPIO
+        if not setup_gpio():
+            log_message("Failed to initialize GPIO")
+            return
+        
+        log_message("Detecting initial volume for each container...")
+        
+        while running:
+            # Create data template
+            data = get_data_template()
             
-            # Store data
-            data["data"][container]["distance_cm"] = distance if distance is not None else 0
-            data["data"][container]["remaining_volume_ml"] = volume if volume is not None else 0
+            # Read all containers
+            for i, (trigger, echo) in enumerate(zip(TRIGGERS, ECHOS)):
+                container = f"CONT{i+1}"
+                distance = measure_distance(trigger, echo)
+                volume = calculate_volume(container, distance)
+                
+                # Store data
+                data["data"][container]["distance_cm"] = distance if distance is not None else 0
+                data["data"][container]["remaining_volume_ml"] = volume if volume is not None else 0
+            
+            # Check if this reading should be saved
+            if should_save_reading(data):
+                save_dispenser_data(data)
+            
+            # Update previous readings
+            previous_readings = data
+            
+            # Wait for the next reading interval
+            time.sleep(READING_INTERVAL)
+            
+    except Exception as e:
+        log_message(f"Error in main loop: {e}")
+    finally:
+        # Cleanup
+        if h is not None:
+            for pin in TRIGGERS + ECHOS:
+                try:
+                    lgpio.gpio_free(h, pin)
+                except:
+                    pass
+            try:
+                lgpio.gpiochip_close(h)
+            except:
+                pass
         
-        # Check if this reading should be saved
-        if should_save_reading(data):
-            save_dispenser_data(data)
+        if mongo_client:
+            try:
+                mongo_client.close()
+            except:
+                pass
         
-        # Update previous readings
-        previous_readings = data
-        
-        # Wait for the next reading interval
-        time.sleep(READING_INTERVAL)
+        log_message("Dispenser Module Stopped")
 
 if __name__ == "__main__":
     main()
