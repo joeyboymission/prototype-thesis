@@ -208,14 +208,25 @@ def should_save_reading(current_reading):
     if not previous_readings:
         return True
     
-    # Check for whole number changes in volume
+    # Minimum volume change threshold (in ml) to consider significant
+    MIN_VOLUME_CHANGE = 10.0  # Only save if volume changes by at least 10ml
+    
     for container in ["CONT1", "CONT2", "CONT3", "CONT4"]:
-        prev_vol = int(previous_readings["data"][container]["remaining_volume_ml"])
-        curr_vol = int(current_reading["data"][container]["remaining_volume_ml"])
+        prev_vol = previous_readings["data"][container]["remaining_volume_ml"]
+        curr_vol = current_reading["data"][container]["remaining_volume_ml"]
         
-        # If there's a change in the whole number part
-        if prev_vol != curr_vol:
-            return True
+        # Calculate absolute change in volume
+        volume_change = abs(prev_vol - curr_vol)
+        
+        # Only save if the change is significant (more than MIN_VOLUME_CHANGE)
+        if volume_change >= MIN_VOLUME_CHANGE:
+            # Get the whole numbers
+            prev_whole = int(prev_vol)
+            curr_whole = int(curr_vol)
+            
+            # Only save if whole numbers are different
+            if prev_whole != curr_whole:
+                return True
     
     return False
 
