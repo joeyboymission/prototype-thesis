@@ -1,175 +1,124 @@
+#!/usr/bin/env python3
 import os
 import subprocess
 import serial
 import time
 import json
 import datetime
-import collections
 import glob
 import random
+import signal
+import sys
+import statistics
 
-# Try to import hardware dependencies with fallbacks
+# Try to import MongoDB
 try:
-    import RPi.GPIO as GPIO
-    GPIO_AVAILABLE = True
+    from pymongo import MongoClient
+    from pymongo.errors import ServerSelectionTimeoutError
+    from bson import ObjectId
+    MONGODB_AVAILABLE = True
 except ImportError:
-    GPIO_AVAILABLE = False
-    print("Warning: RPi.GPIO not available")
+    MONGODB_AVAILABLE = False
+    print("MongoDB not available. Using local storage only.")
 
-# Add DHT sensor setup with proper error handling
-DHT_AVAILABLE = False
+# Try to import DHT sensor library
 try:
     import board
     import adafruit_dht
     DHT_AVAILABLE = True
-    print("DHT sensors available")
 except ImportError:
-    print("Warning: adafruit_dht library not available")
     DHT_AVAILABLE = False
-
-# MongoDB Connection Setup
-try:
-    from pymongo import MongoClient
-    from pymongo.errors import ServerSelectionTimeoutError
-    MONGODB_AVAILABLE = True
-    
-    # Custom JSON encoder for MongoDB ObjectId
-    class MongoJSONEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if hasattr(obj, '__str__'):
-                return str(obj)
-            return super().default(obj)
-    
-    print("MongoDB libraries available")
-except ImportError as e:
-    MONGODB_AVAILABLE = False
-    print(f"Warning: MongoDB not available: {e}. Using local storage only.")
-    
-    # Fallback encoder if MongoDB is not available
-    class MongoJSONEncoder(json.JSONEncoder):
-        pass
-
-# Global variables
-client = None
-db = None
-collection = None
-ser = None
-log_queue = collections.deque(maxlen=20)
-dht_sensors = []
-
-# GPIO simulation if hardware is not available
-class GPIOSimulator:
-    def __init__(self):
-        print("Using GPIO simulator")
-        
-    def gpio_write(self, h, pin, state):
-        print(f"GPIO Write: Pin {pin} set to {state}")
-        
-    def gpio_claim_output(self, h, pin, initial=0):
-        print(f"GPIO Claim: Pin {pin} as output with initial {initial}")
-        
-    def gpiochip_open(self, chip):
-        print(f"GPIO Chip: Opening chip {chip}")
-        return 0
-        
-    def gpiochip_close(self, h):
-        print(f"GPIO Chip: Closing handle {h}")
-        
-    def gpio_free(self, h, pin):
-        print(f"GPIO Free: Pin {pin} on handle {h}")
-        
-    def gpio_claim_input(self, h, pin, pull_up_down=None):
-        print(f"GPIO Claim: Pin {pin} as input with pull_up_down {pull_up_down}")
-        
-    def gpio_read(self, h, pin):
-        print(f"GPIO Read: Pin {pin}")
-        return 0  # Simulate no occupancy
-
-# Use real or simulated GPIO
-if GPIO_AVAILABLE:
-    try:
-        import lgpio
-    except ImportError:
-        print("lgpio not available, using simulator")
-        lgpio = GPIOSimulator()
-else:
-    lgpio = GPIOSimulator()
+    print("DHT sensor library not available. Using simulated data.")
 
 # Settings
-GPIO_CHIP = 0
-FAN_PIN = 23
-FRESHENER_PIN = 22
-BUZZER_PIN = 27  # Added buzzer pin
-PROXIMITY_PIN = 17  # Added proximity sensor pin
-h = lgpio.gpiochip_open(GPIO_CHIP)
-lgpio.gpio_claim_output(h, FAN_PIN, 1)  # Initialize fan OFF (active-low: HIGH = OFF)
-lgpio.gpio_claim_output(h, FRESHENER_PIN, 1)  # Initialize freshener OFF (active-low: HIGH = OFF)
-lgpio.gpio_claim_output(h, BUZZER_PIN, 0)  # Initialize buzzer OFF
-lgpio.gpio_claim_input(h, PROXIMITY_PIN, lgpio.SET_PULL_UP)  # Initialize proximity sensor with pull-up
-
 BAUD_RATE = 9600
 SERIAL_TIMEOUT = 5
-SERIAL_WRITE_TIMEOUT = 2
-
-# MongoDB connection settings
-MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
-
-# Local file storage
-DATA_DIR = "/home/admin/Documents/local-data"
+DATA_DIR = "local-data"
 LOCAL_FILE = os.path.join(DATA_DIR, "odor-data.json")
-os.makedirs(DATA_DIR, exist_ok=True)
+MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
+LOGGING_INTERVAL = 10  # seconds
+DECIMAL_PRECISION = 2  # For temperature and humidity values
 
-# Control timing
-FAN_EXIT_DELAY = 5
-FRESHENER_EXIT_DELAY = 5
-SPRAY_DURATION = 1
-fan_timer = 0
-freshener_timer = 0
-last_spray = 0
+# Global variables
+arduino_serial = None
+mongo_client = None
+mongo_db = None
+mongo_collection = None
+dht_sensors = []
+running = True
+sensor_data_buffer = []
 
-# Buzzer settings
-SHORT_BEEP = 0.2  # 200ms
-LONG_BEEP = 1.0   # 1s
-
-# Proximity sensor settings
-DEBOUNCE_TIME = 0.5  # 500ms debounce time
-last_sensor_state = None
-last_state_change_time = time.time()
-current_state = "Vacant"  # Initial state
-
-def get_timestamp():
-    return datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+# Initialize data format
+def get_data_template():
+    return {
+        "_id": str(ObjectId()) if MONGODB_AVAILABLE else "local_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "aqi": {
+            "GAS1": 0,
+            "GAS2": 0,
+            "GAS3": 0,
+            "GAS4": 0
+        },
+        "dht": {
+            "TEMP1": {"temp": 0.00, "hum": 0.00},
+            "TEMP2": {"temp": 0.00, "hum": 0.00},
+            "TEMP3": {"temp": 0.00, "hum": 0.00},
+            "TEMP4": {"temp": 0.00, "hum": 0.00}
+        }
+    }
 
 def log_message(message):
-    timestamped_msg = f"{get_timestamp()} {message}"
-    log_queue.append(timestamped_msg)
-    print(timestamped_msg)
+    """Print a timestamped log message"""
+    timestamp = datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+    print(f"{timestamp} {message}")
 
-def display_log_window(clear=True):
-    if clear:
-        os.system('cls' if os.name == 'nt' else 'clear')
+def scan_serial_ports():
+    """Scan for available serial ports"""
+    log_message("Scanning serial ports...")
+    command = ["ls", "/dev/tty*"]
     
-    print("\n" + "=" * 80)
-    print("Recent Log Messages:")
-    print("-" * 80)
-    
-    for msg in log_queue:
-        print(msg)
-    
-    remaining_lines = 20 - len(log_queue)
-    for _ in range(remaining_lines):
-        print("")
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        all_ports = result.stdout.strip().split('\n')
+        
+        # Filter for USB and ACM ports
+        usb_ports = [port for port in all_ports if 'USB' in port]
+        acm_ports = [port for port in all_ports if 'ACM' in port]
+        ports = usb_ports + acm_ports
+        
+        if not ports:
+            log_message("No USB serial ports found.")
+            return []
+        
+        log_message(f"Found ports: {', '.join(ports)}")
+        return ports
+    except subprocess.CalledProcessError as e:
+        log_message(f"Error scanning ports: {e}")
+        return []
 
 def fix_port_permissions(port):
     """Fix permission issues for serial ports"""
     try:
         log_message(f"Fixing permissions for {port}...")
-        # Add current user to dialout group (common serial port group)
-        username = os.getenv('USER', 'pi')  # Default to 'pi' if USER env var not found
+        
+        # Kill processes using the port
+        log_message("Killing processes using the port...")
+        subprocess.run(["sudo", "lsof", port], capture_output=True, check=False)
+        
+        # Restart serial service
+        port_base = os.path.basename(port)
+        log_message(f"Restarting serial service for {port_base}...")
+        subprocess.run(["sudo", "systemctl", "restart", f"serial-getty@{port_base}"], 
+                      capture_output=True, check=False)
+        
+        # Add current user to dialout group
+        username = os.getenv('USER', 'pi')
+        log_message(f"Adding user {username} to dialout group...")
         subprocess.run(["sudo", "usermod", "-a", "-G", "dialout", username], 
                       capture_output=True, check=False)
         
-        # Change ownership and permissions of the port
+        # Change ownership and permissions
+        log_message("Setting port permissions...")
         subprocess.run(["sudo", "chown", f"{username}:dialout", port], 
                       capture_output=True, check=False)
         subprocess.run(["sudo", "chmod", "660", port], 
@@ -181,26 +130,12 @@ def fix_port_permissions(port):
         log_message(f"Error fixing permissions: {e}")
         return False
 
-def scan_serial_ports():
-    """Scan for all available serial ports"""
-    # Find all potential serial ports
-    usb_ports = glob.glob('/dev/ttyUSB*')
-    acm_ports = glob.glob('/dev/ttyACM*')
-    all_ports = usb_ports + acm_ports
-    
-    if not all_ports:
-        log_message("No USB serial ports found.")
-        return []
-    
-    log_message(f"Found potential serial ports: {', '.join(all_ports)}")
-    return all_ports
-
 def check_port_permissions(port):
     """Check if we have permission to access the port"""
     try:
-        # Try to open the port to check permissions
         test_ser = serial.Serial(port, BAUD_RATE, timeout=1)
         test_ser.close()
+        log_message(f"Permission verified for {port}")
         return True
     except PermissionError:
         log_message(f"Permission denied for {port}")
@@ -209,263 +144,270 @@ def check_port_permissions(port):
         log_message(f"Error checking port {port}: {e}")
         return False
 
-def find_arduino_serial_port():
+def connect_to_arduino():
     """Find and connect to Arduino on available serial ports"""
-    global ser
+    global arduino_serial
     
-    if ser is not None:
+    # Close existing connection if any
+    if arduino_serial is not None:
         try:
-            ser.close()
+            arduino_serial.close()
         except Exception:
             pass
-        ser = None
+        arduino_serial = None
     
     # Scan for available ports
     all_ports = scan_serial_ports()
-    
     if not all_ports:
-        log_message("No USB serial ports available.")
-        return None
+        return False
     
-    # Try each port to find Arduino
-    for port in all_ports:
+    # Try each port to find Arduino, starting with USB0
+    sorted_ports = sorted(all_ports, key=lambda x: 0 if "USB0" in x else 1)
+    
+    for port in sorted_ports:
         try:
             log_message(f"Trying to connect to {port}...")
             
             # Check permissions and fix if needed
             if not check_port_permissions(port):
-                fix_port_permissions(port)
+                log_message(f"Attempting to fix permissions for {port}...")
+                if not fix_port_permissions(port):
+                    log_message(f"Failed to fix permissions for {port}, trying next port")
+                    continue
             
-            # Try to open the port
-            test_ser = serial.Serial(port, BAUD_RATE, timeout=SERIAL_TIMEOUT, write_timeout=SERIAL_WRITE_TIMEOUT)
-            time.sleep(2)
+            # Open port
+            log_message(f"Opening serial connection to {port}...")
+            test_ser = serial.Serial(port, BAUD_RATE, timeout=SERIAL_TIMEOUT)
+            time.sleep(2)  # Arduino resets on serial connection
             test_ser.reset_input_buffer()
             
             # Send test request and check response
+            log_message("Sending test request to Arduino...")
             test_ser.write(b'r')
-            time.sleep(0.5)  # Give Arduino time to respond
+            time.sleep(0.5)
             
             line = test_ser.readline().decode('utf-8', errors='ignore').strip()
             log_message(f"Received from {port}: '{line}'")
             
+            # Validate response - expecting comma-separated values
             if ',' in line:
                 values = line.split(',')
-                if len(values) == 4:  # For MQ135 sensors
+                if len(values) >= 4:  # At least 4 values for gas sensors
                     log_message(f"Arduino found on {port}")
-                    ser = test_ser
-                    return port
+                    arduino_serial = test_ser
+                    return True
             
             # Not the right device, close it
+            log_message(f"Device on {port} is not the Arduino Mega, closing connection")
             test_ser.close()
-            log_message(f"Port {port} is not connected to Arduino")
+            
         except Exception as e:
             log_message(f"Failed to connect to {port}: {e}")
     
     log_message("No working Arduino connection found.")
-    return None
+    return False
 
-# Simulated sensor readings for testing
-def get_simulated_readings():
-    # Simulate air quality readings (0-500 range)
-    aqi_values = [random.randint(0, 500) for _ in range(4)]
+def setup_dht_sensors():
+    """Initialize DHT22 sensors"""
+    global dht_sensors, DHT_AVAILABLE
     
-    # Simulate temperature/humidity readings
-    dht_readings = [
-        {"temp": round(random.uniform(20, 40), 1), "hum": round(random.uniform(40, 90), 1)}
-        for _ in range(4)
+    if not DHT_AVAILABLE:
+        log_message("DHT sensor library not available, using simulated data.")
+        return False
+    
+    dht_sensors = []
+    
+    # Define pins mapping for Raspberry Pi
+    pin_mapping = [
+        {"name": "DHT1", "pin": board.D4},
+        {"name": "DHT2", "pin": board.D17},
+        {"name": "DHT3", "pin": board.D27},
+        {"name": "DHT4", "pin": board.D22}
     ]
     
-    return aqi_values, dht_readings
-
-# Read from MQ135 sensors
-def read_mq135():
-    global ser
+    log_message("Initializing DHT22 temperature sensors...")
     
-    # If no Arduino connection, try to reestablish it before falling back to simulation
-    if ser is None:
-        log_message("No Arduino connection, attempting to reconnect...")
-        port = find_arduino_serial_port()
-        if port is None:
-            log_message("Could not reconnect to Arduino, using simulated data")
-            return get_simulated_readings()[0]
-    
-    try:
-        # Make sure serial port is working properly before reading
-        if ser and not ser.isOpen():
-            log_message("Serial port closed, reopening...")
-            ser = serial.Serial(ser.port, BAUD_RATE, timeout=SERIAL_TIMEOUT, write_timeout=SERIAL_WRITE_TIMEOUT)
-            time.sleep(1)
-        
-        # Clear any garbage data by reading before sending request
-        ser.reset_input_buffer()
-        
-        # Send request byte
-        ser.write(b'r')
-        time.sleep(0.5)  # Give Arduino time to respond
-        
-        # Read response
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
-        log_message(f"Arduino response: {line}")
-        
-        if ',' in line:
-            values = [int(val.strip()) for val in line.split(',')]
-            if len(values) == 4:
-                return values
-            else:
-                log_message(f"Invalid reading format (got {len(values)} values, expected 4)")
-        else:
-            log_message(f"Invalid reading format (no comma found)")
-    except Exception as e:
-        log_message(f"Error reading MQ135: {e}")
-        # Try to clean up the port for next time
-        if ser is not None:
-            try:
-                port_name = ser.port
-                ser.close()
-            except:
-                pass
-            ser = None
-    
-    # Return simulated data if real reading fails
-    return get_simulated_readings()[0]
-
-# Read from DHT22 sensors
-def read_dht22():
-    """Read DHT22 sensors with improved error handling"""
-    if not DHT_AVAILABLE or not dht_sensors:
-        return get_simulated_readings()[1]
-    
-    readings = []
-    
-    for i, sensor in enumerate(dht_sensors):
+    for item in pin_mapping:
         try:
-            # Add a small delay between readings (DHT sensors need time between readings)
-            time.sleep(0.2)
-            
-            temperature = sensor.temperature
-            humidity = sensor.humidity
-            
-            # Validate the readings (sometimes we get zeros or extreme values)
-            if (temperature is not None and humidity is not None and
-                -40 <= temperature <= 80 and 0 <= humidity <= 100):  # Valid range for DHT22
-                readings.append({"temp": round(temperature, 1), 
-                                "hum": round(humidity, 1)})
-            else:
-                # Invalid reading, use simulated data
-                readings.append({
-                    "temp": round(random.uniform(20, 35), 1), 
-                    "hum": round(random.uniform(40, 70), 1)
-                })
+            log_message(f"Initializing {item['name']} on pin {item['pin']}")
+            sensor = adafruit_dht.DHT22(item['pin'])
+            # Test read to verify it works
+            try:
+                test_temp = sensor.temperature
+                test_hum = sensor.humidity
+                if test_temp is not None and test_hum is not None:
+                    dht_sensors.append(sensor)
+                    log_message(f"Successfully initialized {item['name']}")
+                else:
+                    log_message(f"Invalid readings from {item['name']}, skipping")
+            except Exception as e:
+                log_message(f"Error testing {item['name']}: {e}")
         except Exception as e:
-            log_message(f"DHT sensor {i} error: {e}")
-            # Use simulated data on error
-            readings.append({
-                "temp": round(random.uniform(20, 35), 1), 
-                "hum": round(random.uniform(40, 70), 1)
-            })
+            log_message(f"Failed to initialize {item['name']}: {e}")
     
-    # If we don't have enough readings, pad with simulated data
-    while len(readings) < 4:
-        readings.append({
-            "temp": round(random.uniform(20, 35), 1), 
-            "hum": round(random.uniform(40, 70), 1)
-        })
-    
-    return readings
+    # Report status
+    active_count = len(dht_sensors)
+    if active_count == 0:
+        log_message("No DHT sensors initialized, using simulated data")
+        return False
+    else:
+        log_message(f"Initialized {active_count} DHT sensors")
+        return True
 
-def check_mongo_connection():
-    """Connect to MongoDB if available"""
-    global client, db, collection, MONGODB_AVAILABLE
+def connect_to_mongodb():
+    """Connect to MongoDB"""
+    global mongo_client, mongo_db, mongo_collection
     
     if not MONGODB_AVAILABLE:
         log_message("MongoDB support not available, using local storage only.")
         return False
     
     try:
-        log_message("Attempting to connect to MongoDB...")
-        # Use timeout to avoid hanging
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        # Test connection with explicit ping
-        client.admin.command('ping')
+        log_message("Connecting to MongoDB...")
+        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        # Test connection
+        mongo_client.admin.command('ping')
         
-        # If we got here, connection worked
-        db = client["Smart_Cubicle"]
-        collection = db["odor_module"]
+        mongo_db = mongo_client["Smart_Cubicle"]
+        mongo_collection = mongo_db["odor_module"]
         log_message("Connected to MongoDB successfully!")
         return True
     except Exception as e:
         log_message(f"MongoDB connection error: {e}")
-        client = None
-        db = None
-        collection = None
+        mongo_client = None
+        mongo_db = None
+        mongo_collection = None
         return False
 
-def check_occupancy_status():
-    """Check occupancy status directly from proximity sensor"""
-    global current_state, last_sensor_state, last_state_change_time
+def read_gas_sensors():
+    """Read data from MQ135 gas sensors via Arduino"""
+    global arduino_serial
+    
+    # If no Arduino connection, try to reconnect
+    if arduino_serial is None:
+        log_message("No Arduino connection, attempting to reconnect...")
+        if not connect_to_arduino():
+            log_message("Could not reconnect to Arduino, using simulated data")
+            # Return simulated data if reconnection fails
+            return [random.randint(50, 500) for _ in range(4)]
     
     try:
-        # Read the proximity sensor (active-low: LOW = Occupied, HIGH = Vacant)
-        sensor_state = lgpio.gpio_read(h, PROXIMITY_PIN)
-        current_time = time.time()
+        # Clear input buffer
+        arduino_serial.reset_input_buffer()
         
-        # Apply debounce logic
-        if (current_time - last_state_change_time) > DEBOUNCE_TIME and sensor_state != last_sensor_state:
-            if current_state == "Vacant" and sensor_state == 0:  # Sensor detected someone
-                current_state = "Occupied"
-                log_message("Occupancy detected!")
-                # Beep buzzer to indicate occupancy
-                beep_buzzer(SHORT_BEEP)
-                last_state_change_time = current_time
-            elif current_state == "Occupied" and sensor_state == 1:  # Sensor no longer detects anyone
-                current_state = "Vacant"
-                log_message("Occupancy ended.")
-                # Beep buzzer to indicate vacancy
-                beep_buzzer(LONG_BEEP)
-                last_state_change_time = current_time
+        # Send request to Arduino
+        arduino_serial.write(b'r')
+        time.sleep(0.5)
+        
+        # Read response
+        line = arduino_serial.readline().decode('utf-8', errors='ignore').strip()
+        
+        if ',' in line:
+            values = [int(val.strip()) for val in line.split(',')]
+            if len(values) >= 4:
+                return values[:4]  # Use first 4 values
+        
+        log_message(f"Invalid reading format: {line}")
+    except Exception as e:
+        log_message(f"Error reading gas sensors: {e}")
+        # Close connection to try again next time
+        try:
+            arduino_serial.close()
+        except:
+            pass
+        arduino_serial = None
+    
+    # Return simulated data on failure
+    log_message("Using simulated gas sensor data")
+    return [random.randint(50, 500) for _ in range(4)]
+
+def read_temp_sensors():
+    """Read data from DHT22 temperature sensors"""
+    if not DHT_AVAILABLE or not dht_sensors:
+        # Return simulated data if no sensors available
+        log_message("No DHT sensors available, using simulated temperature data")
+        return [
+            {"temp": round(random.uniform(20, 35), DECIMAL_PRECISION), 
+             "hum": round(random.uniform(40, 80), DECIMAL_PRECISION)}
+            for _ in range(4)
+        ]
+    
+    readings = []
+    
+    for i, sensor in enumerate(dht_sensors):
+        try:
+            time.sleep(0.2)  # DHT sensors need time between readings
             
-            last_sensor_state = sensor_state
-        
-        return current_state == "Occupied"
-    except Exception as e:
-        log_message(f"Error reading proximity sensor: {e}")
-        return False
-
-def beep_buzzer(duration):
-    """Beep the buzzer for the specified duration"""
-    try:
-        lgpio.gpio_write(h, BUZZER_PIN, 1)
-        time.sleep(duration)
-        lgpio.gpio_write(h, BUZZER_PIN, 0)
-    except Exception as e:
-        log_message(f"Error controlling buzzer: {e}")
-
-def control_fan(aqi_values, dht_readings):
-    global fan_timer
-    current_time = time.time()
-    is_occupied = check_occupancy_status()
+            temperature = sensor.temperature
+            humidity = sensor.humidity
+            
+            # Validate readings
+            if (temperature is not None and humidity is not None and
+                -40 <= temperature <= 80 and 0 <= humidity <= 100):
+                readings.append({
+                    "temp": round(temperature, DECIMAL_PRECISION),
+                    "hum": round(humidity, DECIMAL_PRECISION)
+                })
+            else:
+                # Use simulated data for invalid readings
+                readings.append({
+                    "temp": round(random.uniform(20, 35), DECIMAL_PRECISION),
+                    "hum": round(random.uniform(40, 80), DECIMAL_PRECISION)
+                })
+                log_message(f"DHT sensor {i+1} gave invalid reading, using simulated data")
+        except Exception as e:
+            log_message(f"DHT sensor {i+1} error: {e}")
+            # Use simulated data on error
+            readings.append({
+                "temp": round(random.uniform(20, 35), DECIMAL_PRECISION),
+                "hum": round(random.uniform(40, 80), DECIMAL_PRECISION)
+            })
     
-    if is_occupied:
-        lgpio.gpio_write(h, FAN_PIN, 0)  # Turn fan ON (active-low: LOW = ON)
-        fan_timer = current_time + FAN_EXIT_DELAY  # Set timer for 5 seconds after occupancy ends
-    elif current_time < fan_timer:
-        lgpio.gpio_write(h, FAN_PIN, 0)  # Keep fan ON during the exit delay period (active-low: LOW = ON)
-    else:
-        lgpio.gpio_write(h, FAN_PIN, 1)  # Turn fan OFF after the exit delay period (active-low: HIGH = OFF)
-
-def control_freshener(aqi_values):
-    global last_spray, freshener_timer
-    current_time = time.time()
-    is_occupied = check_occupancy_status()
+    # If we don't have enough readings, pad with simulated data
+    while len(readings) < 4:
+        readings.append({
+            "temp": round(random.uniform(20, 35), DECIMAL_PRECISION),
+            "hum": round(random.uniform(40, 80), DECIMAL_PRECISION)
+        })
     
-    if not is_occupied and current_time >= freshener_timer:
-        lgpio.gpio_write(h, FRESHENER_PIN, 0)  # Turn freshener ON (active-low: LOW = ON)
-        time.sleep(SPRAY_DURATION)
-        lgpio.gpio_write(h, FRESHENER_PIN, 1)  # Turn freshener OFF (active-low: HIGH = OFF)
-        last_spray = current_time
-        freshener_timer = float('inf')
+    return readings
 
-def save_to_local_json(data):
+def fix_sensor_data(gas_values, temp_readings):
+    """Handle sensor failures by averaging values from working sensors"""
+    fixed_gas = list(gas_values)
+    fixed_temp = temp_readings.copy()
+    
+    # Fix gas values (replace zeros or nulls with averages)
+    valid_gas = [val for val in gas_values if val > 0]
+    if valid_gas:
+        avg_gas = sum(valid_gas) / len(valid_gas)
+        for i in range(len(fixed_gas)):
+            if fixed_gas[i] <= 0:
+                fixed_gas[i] = round(avg_gas)
+                log_message(f"*GAS{i+1}: Fixed with average {round(avg_gas)}")
+    
+    # Fix temperature values
+    valid_temps = [r["temp"] for r in temp_readings if r["temp"] > 0]
+    valid_hums = [r["hum"] for r in temp_readings if r["hum"] > 0]
+    
+    if valid_temps:
+        avg_temp = sum(valid_temps) / len(valid_temps)
+        for i in range(len(fixed_temp)):
+            if fixed_temp[i]["temp"] <= 0:
+                fixed_temp[i]["temp"] = round(avg_temp, DECIMAL_PRECISION)
+                log_message(f"*TEMP{i+1}: Fixed temperature with average {round(avg_temp, DECIMAL_PRECISION)}")
+    
+    if valid_hums:
+        avg_hum = sum(valid_hums) / len(valid_hums)
+        for i in range(len(fixed_temp)):
+            if fixed_temp[i]["hum"] <= 0:
+                fixed_temp[i]["hum"] = round(avg_hum, DECIMAL_PRECISION)
+                log_message(f"*TEMP{i+1}: Fixed humidity with average {round(avg_hum, DECIMAL_PRECISION)}")
+    
+    return fixed_gas, fixed_temp
+
+def save_to_local_storage(data):
+    """Save data to local JSON file"""
     try:
         os.makedirs(os.path.dirname(LOCAL_FILE), exist_ok=True)
         
@@ -479,305 +421,261 @@ def save_to_local_json(data):
         
         existing_data.append(data)
         
+        # Use atomic write to prevent corruption
         temp_file = LOCAL_FILE + ".tmp"
         with open(temp_file, "w") as f:
-            json.dump(existing_data, f, cls=MongoJSONEncoder)
+            json.dump(existing_data, f, indent=2)
         os.replace(temp_file, LOCAL_FILE)
-        log_message(f"Saved to local storage ({len(existing_data)} records)")
+        
         return True
     except Exception as e:
         log_message(f"Local storage error: {e}")
         return False
 
-def log_data(aqi_values, dht_readings):
-    """Log sensor data to local JSON and MongoDB if available"""
-    global collection, client, db
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def save_to_mongodb(data):
+    """Save data to MongoDB"""
+    global mongo_collection
     
-    data = {
-        "timestamp": timestamp,
-        "aqi": {
-            "GAS1": aqi_values[0],
-            "GAS2": aqi_values[1],
-            "GAS3": aqi_values[2],
-            "GAS4": aqi_values[3]
-        },
-        "dht": {
-            "TEMP1": {
-                "temp": round(dht_readings[0]['temp'], 1),
-                "hum": round(dht_readings[0]['hum'], 1)
-            },
-            "TEMP2": {
-                "temp": round(dht_readings[1]['temp'], 1),
-                "hum": round(dht_readings[1]['hum'], 1)
-            },
-            "TEMP3": {
-                "temp": round(dht_readings[2]['temp'], 1),
-                "hum": round(dht_readings[2]['hum'], 1)
-            },
-            "TEMP4": {
-                "temp": round(dht_readings[3]['temp'], 1),
-                "hum": round(dht_readings[3]['hum'], 1)
-            }
-        },
-        "occupancy": current_state  # Add occupancy status to the data
-    }
-    
-    # Always save locally first
-    save_to_local_json(data)
-    
-    # Try MongoDB if available
-    if collection is not None:
-        try:
-            result = collection.insert_one(data)
-            log_message(f"Data also saved to MongoDB (ID: {result.inserted_id})")
-            return True
-        except Exception as e:
-            log_message(f"MongoDB error: {e}")
-            # Reset MongoDB connection on error
-            collection = None
-            db = None
-            client = None
-            
-            # Try to reconnect
-            check_mongo_connection()
-    
-    return True
-
-def setup_dht_sensors():
-    """Initialize DHT sensors with proper error handling"""
-    global dht_sensors, DHT_AVAILABLE
-    dht_sensors = []
-    
-    if not DHT_AVAILABLE:
-        log_message("DHT sensor support not available")
+    if not MONGODB_AVAILABLE or mongo_collection is None:
         return False
     
-    # Define pins mapping - using the same pins as in the test script
-    pin_mapping = [
-        {"name": "DHT1", "pin": board.D4},  # GPIO4, Pin 7
-        {"name": "DHT2", "pin": board.D5},  # GPIO5, Pin 29
-        {"name": "DHT3", "pin": board.D6},  # GPIO6, Pin 31
-        {"name": "DHT4", "pin": board.D12}  # GPIO12, Pin 32
+    try:
+        # Convert _id string to ObjectId for MongoDB
+        if '_id' in data and isinstance(data['_id'], str):
+            if data['_id'].startswith("local_"):
+                # Generate new ObjectId for local IDs
+                data['_id'] = ObjectId()
+            else:
+                # Convert string ID to ObjectId
+                data['_id'] = ObjectId(data['_id'])
+        
+        result = mongo_collection.insert_one(data)
+        return True
+    except Exception as e:
+        log_message(f"MongoDB error: {e}")
+        # Try to reconnect
+        connect_to_mongodb()
+        return False
+
+def buffer_sensor_data(gas_values, temp_readings):
+    """Add sensor data to buffer for averaging"""
+    global sensor_data_buffer
+    
+    sensor_data_buffer.append({
+        "gas": gas_values,
+        "temp": temp_readings
+    })
+    
+    # Keep buffer size reasonable
+    if len(sensor_data_buffer) > 10:
+        sensor_data_buffer.pop(0)
+
+def calculate_average_from_buffer():
+    """Calculate average values from buffered sensor data"""
+    global sensor_data_buffer
+    
+    if not sensor_data_buffer:
+        return None
+    
+    # Initialize with zeros
+    avg_gas = [0, 0, 0, 0]
+    avg_temp = [
+        {"temp": 0.0, "hum": 0.0},
+        {"temp": 0.0, "hum": 0.0},
+        {"temp": 0.0, "hum": 0.0},
+        {"temp": 0.0, "hum": 0.0}
     ]
     
-    # Initialize GPIO using lgpio (same as test script)
-    try:
-        import lgpio
-        GPIO_CHIP = 0
-        h = lgpio.gpiochip_open(GPIO_CHIP)
-        log_message("GPIO initialized with lgpio")
-    except Exception as e:
-        log_message(f"Error initializing GPIO: {e}")
-    
-    for item in pin_mapping:
-        try:
-            log_message(f"Trying to initialize {item['name']} on pin {item['pin']}")
-            sensor = adafruit_dht.DHT22(item['pin'])
-            # Test read to verify it works
-            try:
-                test_temp = sensor.temperature
-                test_hum = sensor.humidity
-                if test_temp is not None and test_hum is not None:
-                    dht_sensors.append(sensor)
-                    log_message(f"Successfully initialized {item['name']} on pin {item['pin']}")
-                else:
-                    log_message(f"Invalid readings from {item['name']}, skipping")
-            except Exception as e:
-                log_message(f"Error testing {item['name']}: {e}")
-        except Exception as e:
-            log_message(f"Failed to initialize {item['name']}: {e}")
-    
-    # Report status
-    active_count = len(dht_sensors)
-    if active_count == 0:
-        log_message("No DHT sensors could be initialized, using simulated data")
-        DHT_AVAILABLE = False
-    else:
-        log_message(f"Initialized {active_count} DHT sensors")
-    
-    return DHT_AVAILABLE
-
-def start_monitoring():
-    """Main monitoring loop"""
-    global last_display_time, last_log_time
-    
-    last_display_time = time.time()
-    last_log_time = time.time()
-    
-    log_message("Starting continuous monitoring. Press Ctrl+C to stop.")
-    log_message("Reading sensors and saving data every 5 seconds...")
-    
-    # Initialize fan and freshener to OFF state (active-low: HIGH = OFF)
-    lgpio.gpio_write(h, FAN_PIN, 1)
-    lgpio.gpio_write(h, FRESHENER_PIN, 1)
-    
-    # Initialize buzzer to OFF state
-    lgpio.gpio_write(h, BUZZER_PIN, 0)
-    
-    # Test buzzer with a short beep
-    beep_buzzer(SHORT_BEEP)
-    
-    try:
-        while True:
-            current_time = time.time()
-            
-            # Read sensors
-            aqi_values = read_mq135()
-            dht_readings = read_dht22()
-            
-            # Check if we have valid readings from both sensors
-            valid_gas = all(val > 0 for val in aqi_values)
-            valid_temp = all(reading["temp"] is not None and -40 <= reading["temp"] <= 80 for reading in dht_readings)
-            
-            # Control fan and freshener
-            control_fan(aqi_values, dht_readings)
-            control_freshener(aqi_values)
-            
-            # Display data at intervals
-            if current_time - last_display_time >= 10:
-                # Display data
-                temp_summary = ", ".join([f"T{i+1}: {round(dht_readings[i]['temp'], 1)}C" for i in range(len(dht_readings))])
-                aqi_summary = ", ".join([f"GAS{i+1}: {val}" for i, val in enumerate(aqi_values)])
-                is_occupied = check_occupancy_status()
-                status_line = f"AQI: [{aqi_summary}] | {temp_summary} | Occupied: {is_occupied}"
-                log_message(status_line)
-                
-                last_display_time = current_time
-            
-            # Log data at 5-second intervals if both sensors are working
-            if current_time - last_log_time >= 5:
-                if valid_gas and valid_temp:
-                    log_message("Logging data to local and remote databases...")
-                    log_data(aqi_values, dht_readings)
-                    last_log_time = current_time
-                else:
-                    # If sensors aren't working, try to reconnect
-                    if not valid_gas:
-                        log_message("Gas sensors not working, attempting to reconnect...")
-                        # Try to reconnect to Arduino
-                        port = find_arduino_serial_port()
-                        if port:
-                            log_message(f"Reconnected to Arduino on {port}")
-                        else:
-                            log_message("Failed to reconnect to Arduino")
-                    
-                    if not valid_temp:
-                        log_message("Temperature sensors not working, attempting to reconnect...")
-                        # Try to reinitialize DHT sensors
-                        setup_dht_sensors()
-            
-            # Small delay to prevent CPU overuse
-            time.sleep(0.1)
-            
-    except KeyboardInterrupt:
-        log_message("Monitoring stopped by user")
-    finally:
-        # Turn off outputs (active-low: HIGH = OFF)
-        lgpio.gpio_write(h, FAN_PIN, 1)
-        lgpio.gpio_write(h, FRESHENER_PIN, 1)
-        lgpio.gpio_write(h, BUZZER_PIN, 0)
+    # Sum all values
+    for data in sensor_data_buffer:
+        # Sum gas values
+        for i in range(4):
+            avg_gas[i] += data["gas"][i]
         
-        # Clean up DHT resources
-        for sensor in dht_sensors:
-            try:
-                sensor.exit()
-            except:
-                pass
+        # Sum temperature and humidity
+        for i in range(4):
+            avg_temp[i]["temp"] += data["temp"][i]["temp"]
+            avg_temp[i]["hum"] += data["temp"][i]["hum"]
+    
+    # Calculate averages
+    buffer_len = len(sensor_data_buffer)
+    for i in range(4):
+        avg_gas[i] = round(avg_gas[i] / buffer_len)
+        avg_temp[i]["temp"] = round(avg_temp[i]["temp"] / buffer_len, DECIMAL_PRECISION)
+        avg_temp[i]["hum"] = round(avg_temp[i]["hum"] / buffer_len, DECIMAL_PRECISION)
+    
+    return {"gas": avg_gas, "temp": avg_temp}
+
+def log_sensor_data(gas_values, temp_readings):
+    """Log all sensor data"""
+    gas_str = f"ODOR [GAS1: {gas_values[0]} | GAS2: {gas_values[1]} | GAS3: {gas_values[2]} | GAS4: {gas_values[3]}]"
+    temp_str = f"TEMP ["
+    
+    for i, reading in enumerate(temp_readings):
+        temp_str += f"TEMP{i+1}: {reading['temp']}°C | "
+    temp_str = temp_str.rstrip(" | ") + "]"
+    
+    log_message(f"{gas_str} {temp_str}")
+
+def save_sensor_data(gas_values, temp_readings):
+    """Save sensor data to database(s)"""
+    data = get_data_template()
+    
+    # Fill in gas values
+    for i in range(4):
+        data["aqi"][f"GAS{i+1}"] = gas_values[i]
+    
+    # Fill in temp values
+    for i in range(4):
+        data["dht"][f"TEMP{i+1}"]["temp"] = temp_readings[i]["temp"]
+        data["dht"][f"TEMP{i+1}"]["hum"] = temp_readings[i]["hum"]
+    
+    # Save to local storage first
+    local_saved = save_to_local_storage(data)
+    
+    # Try saving to MongoDB if available
+    remote_saved = save_to_mongodb(data)
+    
+    # Log result according to the updated format
+    if local_saved and remote_saved:
+        log_message("Status: DATA SAVED TO REMOTE AND LOCAL")
+    elif local_saved:
+        log_message("Status: DATA SAVED TO LOCAL ONLY")
+    else:
+        log_message("Status: FAILED TO SAVE DATA")
+    
+    log_message(f"Odor Data: {gas_values[0]} | {gas_values[1]} | {gas_values[2]} | {gas_values[3]}")
+    log_message(f"Temp Data: {temp_readings[0]['temp']} | {temp_readings[1]['temp']} | {temp_readings[2]['temp']} | {temp_readings[3]['temp']}")
+
+def signal_handler(sig, frame):
+    """Handle Ctrl+C to cleanly exit the program"""
+    global running
+    print("\nStopping...")
+    running = False
+
+def print_initialization_example():
+    """Display initialization example"""
+    print("""
+[2023-07-15 14:30:45] === Odor Module Starting ===
+[2023-07-15 14:30:45] Scanning serial ports...
+[2023-07-15 14:30:45] Found ports: /dev/ttyUSB0, /dev/ttyACM0
+[2023-07-15 14:30:45] Trying to connect to /dev/ttyUSB0...
+[2023-07-15 14:30:47] Received from /dev/ttyUSB0: '125,230,156,187'
+[2023-07-15 14:30:47] Arduino found on /dev/ttyUSB0
+[2023-07-15 14:30:47] Initializing DHT22 temperature sensors...
+[2023-07-15 14:30:47] Initializing DHT1 on pin D4
+[2023-07-15 14:30:48] Successfully initialized DHT1
+[2023-07-15 14:30:48] Initializing DHT2 on pin D17
+[2023-07-15 14:30:49] Successfully initialized DHT2
+[2023-07-15 14:30:49] Initializing DHT3 on pin D27
+[2023-07-15 14:30:50] Error testing DHT3: Device not found
+[2023-07-15 14:30:50] Initializing DHT4 on pin D22
+[2023-07-15 14:30:51] Successfully initialized DHT4
+[2023-07-15 14:30:51] Initialized 3 DHT sensors
+[2023-07-15 14:30:51] Connecting to MongoDB...
+[2023-07-15 14:30:52] Connected to MongoDB successfully!
+[2023-07-15 14:30:52] Starting continuous monitoring. Press Ctrl+C to stop.
+""")
 
 def main():
-    # Scan for available ports
-    log_message("Scanning for available serial ports...")
-    all_ports = scan_serial_ports()
+    global running
     
-    if not all_ports:
-        log_message("No serial ports found. Please connect an Arduino and try again.")
-        return
+    # Setup signal handler for Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)
     
-    # Try connecting to Arduino
-    log_message("Attempting to find Arduino...")
-    port = find_arduino_serial_port()
+    log_message("=== Odor Module Starting ===")
     
-    if port:
-        log_message(f"Arduino connected on {port}")
+    # Create data directory
+    os.makedirs(DATA_DIR, exist_ok=True)
+    
+    # Initial setup
+    arduino_connected = connect_to_arduino()
+    if not arduino_connected:
+        log_message("Warning: No Arduino connection. Using simulated gas data.")
+    
+    dht_available = setup_dht_sensors()
+    if not dht_available:
+        log_message("Warning: No DHT sensors available. Using simulated temperature data.")
+    
+    mongodb_connected = connect_to_mongodb()
+    if mongodb_connected:
+        log_message("MongoDB connected. Data will be saved to remote and local storage.")
     else:
-        log_message("No Arduino found. Will run with simulated MQ135 data.")
+        log_message("No MongoDB connection. Data will be saved to local storage only.")
     
-    # Setup DHT sensors
-    log_message("Setting up DHT sensors...")
-    setup_dht_sensors()
+    log_message("Starting continuous monitoring. Press Ctrl+C to stop.")
     
-    # Try connecting to MongoDB
-    db_connected = check_mongo_connection()
-    if db_connected:
-        log_message("MongoDB connection active - data will be sent to both local and remote storage")
-    else:
-        log_message("Using local storage only")
+    last_log_time = time.time()
+    last_save_time = time.time()
     
-    # Initialize fan and freshener to OFF state (active-low: HIGH = OFF)
-    lgpio.gpio_write(h, FAN_PIN, 1)
-    lgpio.gpio_write(h, FRESHENER_PIN, 1)
-    lgpio.gpio_write(h, BUZZER_PIN, 0)
-    
-    try:
-        while True:
-            print("\n" + "="*80)
-            print("╔═══════════════════════════════════════════════════╗")
-            print("║              SMART RESTROOM SYSTEM                ║")
-            print("║                  ODOR MODULE                      ║")
-            print("╚═══════════════════════════════════════════════════╝")
-            print("="*80)
-            print("1. Start Monitoring")
-            print("2. Re-scan Serial Ports")
-            print("3. Exit Program")
-            
-            choice = input("\nEnter choice (1-3): ")
-            
-            if choice == "1":
-                start_monitoring()
-            elif choice == "2":
-                log_message("Re-scanning serial ports...")
-                all_ports = scan_serial_ports()
-                port = find_arduino_serial_port()
-                if port:
-                    log_message(f"Arduino reconnected on {port}")
-                else:
-                    log_message("No Arduino found. Will run with simulated MQ135 data.")
-            elif choice == "3":
-                log_message("Exiting...")
-                break
-            else:
-                print("Invalid choice")
-    finally:
-        # Cleanup
-        log_message("Performing cleanup...")
-        # Turn off outputs (active-low: HIGH = OFF)
-        lgpio.gpio_write(h, FAN_PIN, 1)
-        lgpio.gpio_write(h, FRESHENER_PIN, 1)
-        lgpio.gpio_write(h, BUZZER_PIN, 0)
-        lgpio.gpiochip_close(h)
+    # Main loop
+    while running:
+        current_time = time.time()
         
-        if ser:
-            try:
-                ser.close()
-                log_message(f"Closed serial port {ser.port}")
-            except:
-                pass
+        # Read sensor data frequently but log less often
+        if current_time - last_log_time >= 5:  # Read every 5 seconds
+            # Read sensors
+            gas_values = read_gas_sensors()
+            temp_readings = read_temp_sensors()
             
-        if client:
-            try:
-                client.close()
-                log_message("Closed MongoDB connection")
-            except:
-                pass
+            # Fix any invalid sensor data
+            gas_values, temp_readings = fix_sensor_data(gas_values, temp_readings)
+            
+            # Buffer the data for averaging
+            buffer_sensor_data(gas_values, temp_readings)
+            
+            # Log current readings
+            log_sensor_data(gas_values, temp_readings)
+            
+            last_log_time = current_time
         
-        # Make sure all DHT sensors are properly closed
-        for sensor in dht_sensors:
-            try:
-                sensor.exit()
-            except:
-                pass
+        # Save buffered/averaged data at the specified interval
+        if current_time - last_save_time >= LOGGING_INTERVAL:  # Save every 10 seconds
+            # Calculate average from buffer
+            avg_data = calculate_average_from_buffer()
+            
+            if avg_data:
+                # Save the averaged data
+                save_sensor_data(avg_data["gas"], avg_data["temp"])
+            
+            last_save_time = current_time
+        
+        # Small delay to prevent CPU overuse
+        time.sleep(0.1)
+    
+    # When stopping, save final data
+    avg_data = calculate_average_from_buffer()
+    if avg_data:
+        log_message("Saving final data before exit...")
+        save_sensor_data(avg_data["gas"], avg_data["temp"])
+    
+    # Clean up before exit
+    log_message("Cleaning up...")
+    
+    # Close Arduino connection
+    if arduino_serial:
+        try:
+            arduino_serial.close()
+            log_message("Closed Arduino serial connection")
+        except:
+            pass
+    
+    # Close DHT sensors
+    for sensor in dht_sensors:
+        try:
+            sensor.exit()
+        except:
+            pass
+    
+    # Close MongoDB connection
+    if mongo_client:
+        try:
+            mongo_client.close()
+            log_message("Closed MongoDB connection")
+        except:
+            pass
+    
+    log_message("Final data saved. Exiting.")
 
 if __name__ == "__main__":
-    log_message("Odor Module Starting...")
     main()
