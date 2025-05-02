@@ -120,14 +120,14 @@ def connect_to_mongodb():
         mongo_client.admin.command('ping')
         
         mongo_db = mongo_client["Smart_Cubicle"]
-        mongo_collection = mongo_db["dispenser"]
+        mongo_collection = mongo_db["dispenser_resource"]  # Using the correct collection name
         
         # Check if collection exists and has data
         if mongo_collection.count_documents({}) > 0:
             log_message("Found existing data in remote database")
-            latest_doc = mongo_collection.find_one(sort=[("reading", -1)])
+            latest_doc = mongo_collection.find_one(sort=[("timestamp", -1)])
             if latest_doc:
-                reading_counter = latest_doc["reading"]
+                reading_counter = latest_doc.get("reading", 0)
                 log_message(f"Latest remote reading number: {reading_counter}")
         
         log_message("Connected to MongoDB successfully!")
@@ -137,6 +137,19 @@ def connect_to_mongodb():
         mongo_client = None
         mongo_db = None
         mongo_collection = None
+        return False
+
+def save_to_mongodb(data):
+    """Save data to MongoDB"""
+    if not MONGODB_AVAILABLE or mongo_collection is None:
+        return False
+    
+    try:
+        mongo_collection.insert_one(data)
+        log_message("Data saved to MongoDB")
+        return True
+    except Exception as e:
+        log_message(f"Error saving to MongoDB: {e}")
         return False
 
 def save_to_local_storage(data):
@@ -172,25 +185,17 @@ def save_to_local_storage(data):
 
 def save_dispenser_data(dispenser_data):
     """Save dispenser data to both MongoDB and local storage"""
-    success = True
-    
-    if MONGODB_AVAILABLE and mongo_collection:
-        try:
-            mongo_collection.insert_one(dispenser_data)
-        except Exception as e:
-            log_message(f"Error saving to MongoDB: {e}")
-            success = False
-    
+    mongodb_success = save_to_mongodb(dispenser_data)
     local_success = save_to_local_storage(dispenser_data)
-    if not local_success:
-        success = False
     
-    if success:
-        log_message("DATA SAVED TO REMOTE AND LOCAL")
+    if mongodb_success and local_success:
+        log_message("Data saved to both remote and local storage")
+    elif local_success:
+        log_message("Data saved to local storage only")
     else:
-        log_message("ERROR SAVING DATA")
+        log_message("Failed to save data")
     
-    return success
+    return mongodb_success or local_success
 
 def should_save_reading(current_reading):
     """Determine if the current reading should be saved based on changes"""
