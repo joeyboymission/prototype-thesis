@@ -32,8 +32,8 @@ except ImportError:
 # Configuration
 SENSOR_PIN = 17         # E18-D80NK proximity sensor
 BUZZER_PIN = 27         # Buzzer for audio feedback
-DATA_DIR = "local-data"
-JSON_FILE = os.path.join(DATA_DIR, "occupancy-data.json")
+DATA_DIR = "/home/admin/Documents/local-data"
+LOCAL_FILE = os.path.join(DATA_DIR, "occupancy-data.json")
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
 DEBOUNCE_TIME = 0.5     # 500ms debounce for sensor
 SHORT_BEEP = 0.2        # 200ms
@@ -130,122 +130,137 @@ def format_duration(seconds):
     secs = int(seconds % 60)
     return f"{minutes}min {secs}sec"
 
-def load_visitor_count():
-    """Load the last visitor count from database"""
-    global visitor_count, current_state, current_start_time, current_visitor_id
+def initialize_storage():
+    """Initialize storage system and check existing data"""
+    global current_visitor_id, visitor_count
     
-    # Try MongoDB first if available
-    if mongo_collection is not None:
+    log_message("Checking storage system...")
+    
+    # Create local data directory if it doesn't exist
+    if not os.path.exists(DATA_DIR):
+        log_message(f"Creating local data directory: {DATA_DIR}")
         try:
-            # Find the highest visitor_id in MongoDB
-            latest = mongo_collection.find_one(
-                {"type": "visit"}, 
-                sort=[("visitor_id", -1)]
-            )
-            
-            if latest:
-                visitor_count = latest.get("visitor_id", 0)
-                
-                # Check if there's an ongoing visit (no end_time)
-                ongoing = mongo_collection.find_one({
-                    "type": "visit",
-                    "end_time": None
-                })
-                
-                if ongoing:
-                    current_state = STATE_OCCUPIED
-                    current_visitor_id = ongoing.get("visitor_id")
-                    # Convert ISO string to timestamp if needed
-                    start_time_str = ongoing.get("start_time")
-                    if start_time_str:
-                        current_start_time = datetime.datetime.fromisoformat(
-                            start_time_str.replace(".000000", "")
-                        ).timestamp()
-                
-                log_message(f"Loaded visitor count from MongoDB: {visitor_count}")
-                if current_state == STATE_OCCUPIED:
-                    log_message(f"Ongoing visit detected for visitor ID: {current_visitor_id}")
-                return True
-                
+            os.makedirs(DATA_DIR, exist_ok=True)
         except Exception as e:
-            log_message(f"Error loading from MongoDB: {e}")
+            log_message(f"Error creating data directory: {e}")
+            return False
     
-    # Fallback to local storage
-    try:
-        if os.path.exists(JSON_FILE):
-            with open(JSON_FILE, 'r') as f:
-                data = json.load(f)
-                
-                if isinstance(data, list) and len(data) > 0:
-                    # Find highest visitor_id
-                    visitor_ids = [entry.get("visitor_id", 0) for entry in data if "visitor_id" in entry]
-                    visitor_count = max(visitor_ids) if visitor_ids else 0
-                    
-                    # Find ongoing visit
-                    ongoing = [entry for entry in data if entry.get("end_time") is None]
-                    if ongoing and len(ongoing) > 0:
-                        current_state = STATE_OCCUPIED
-                        current_visitor_id = ongoing[0].get("visitor_id")
-                        start_time_str = ongoing[0].get("start_time")
-                        if start_time_str:
-                            current_start_time = datetime.datetime.fromisoformat(
-                                start_time_str.replace(".000000", "")
-                            ).timestamp()
-                            
-                    log_message(f"Loaded visitor count from local storage: {visitor_count}")
-                    if current_state == STATE_OCCUPIED:
-                        log_message(f"Ongoing visit detected for visitor ID: {current_visitor_id}")
-                    return True
-                
-    except Exception as e:
-        log_message(f"Error loading from local file: {e}")
-    
-    # If no data found, start from zero
-    visitor_count = 0
-    log_message("No previous data found, starting with visitor count: 0")
-    return False
-
-def save_visit_data(entry):
-    """Save visit data to both local and MongoDB storage"""
-    # Format timestamps in ISO format
-    formatted_entry = entry.copy()
-    
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
-    
-    # Save to local file
-    try:
-        # Read existing data
-        existing_data = []
-        if os.path.exists(JSON_FILE):
-            with open(JSON_FILE, 'r') as f:
-                existing_data = json.load(f)
-        
-        # Append new entry
-        existing_data.append(formatted_entry)
-        
-        # Write back to file
-        with open(JSON_FILE, 'w') as f:
-            json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
-        
-        log_message("Data saved to local storage")
-        local_saved = True
-    except Exception as e:
-        log_message(f"Error saving to local storage: {e}")
-        local_saved = False
-    
-    # Save to MongoDB if available
-    mongo_saved = False
-    if mongo_collection is not None:
+    # Check local file
+    if os.path.exists(LOCAL_FILE):
         try:
-            mongo_collection.insert_one(formatted_entry)
-            log_message("Data saved to MongoDB")
-            mongo_saved = True
+            with open(LOCAL_FILE, "r") as f:
+                data = json.load(f)
+                if data:
+                    latest = data[-1]
+                    current_visitor_id = latest["visitor_id"]
+                    visitor_count = len(data)
+                    log_message(f"Found {len(data)} existing records in local storage")
+                    log_message(f"Latest local visitor ID: {current_visitor_id}")
+        except Exception as e:
+            log_message(f"Error reading local data file: {e}")
+    else:
+        log_message("Local data file does not exist, will create when first data is saved")
+    
+    return True
+
+def connect_to_mongodb():
+    """Connect to MongoDB and restore latest state"""
+    global mongo_client, mongo_collection, current_visitor_id, visitor_count
+    
+    if not MONGODB_AVAILABLE:
+        log_message("MongoDB support not available, using local storage only.")
+        return False
+    
+    try:
+        log_message("Connecting to MongoDB...")
+        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        # Test connection
+        mongo_client.admin.command('ping')
+        
+        db = mongo_client["Smart_Cubicle"]
+        mongo_collection = db["occupancy"]
+        
+        # Check if collection exists and has data
+        if mongo_collection.count_documents({}) > 0:
+            log_message("Found existing data in remote database")
+            latest_doc = mongo_collection.find_one(sort=[("visitor_id", -1)])
+            if latest_doc:
+                current_visitor_id = latest_doc["visitor_id"]
+                visitor_count = mongo_collection.count_documents({})
+                log_message(f"Latest remote visitor ID: {current_visitor_id}")
+                log_message(f"Total visitors in remote DB: {visitor_count}")
+        
+        log_message("Connected to MongoDB successfully!")
+        return True
+    except Exception as e:
+        log_message(f"MongoDB connection error: {e}")
+        mongo_client = None
+        mongo_collection = None
+        return False
+
+def save_to_local_storage(data):
+    """Save data to local JSON file"""
+    try:
+        # Ensure the directory exists
+        os.makedirs(DATA_DIR, exist_ok=True)
+        
+        existing_data = []
+        if os.path.exists(LOCAL_FILE):
+            try:
+                with open(LOCAL_FILE, "r") as f:
+                    existing_data = json.load(f)
+            except json.JSONDecodeError:
+                log_message("Creating new data file (existing file corrupt)")
+        
+        # Ensure data has the correct format
+        if not isinstance(existing_data, list):
+            existing_data = []
+        
+        existing_data.append(data)
+        
+        # Use atomic write to prevent corruption
+        temp_file = LOCAL_FILE + ".tmp"
+        with open(temp_file, "w") as f:
+            json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
+        os.replace(temp_file, LOCAL_FILE)
+        
+        return True
+    except Exception as e:
+        log_message(f"Local storage error: {e}")
+        return False
+
+def save_visitor_data(visitor_data):
+    """Save visitor data to both MongoDB and local storage"""
+    success = True
+    
+    if MONGODB_AVAILABLE and mongo_collection:
+        try:
+            mongo_collection.insert_one(visitor_data)
         except Exception as e:
             log_message(f"Error saving to MongoDB: {e}")
+            success = False
     
-    # Return overall success
-    return local_saved or mongo_saved
+    local_success = save_to_local_storage(visitor_data)
+    if not local_success:
+        success = False
+    
+    if success:
+        log_message("DATA SAVED TO REMOTE AND LOCAL")
+    else:
+        log_message("ERROR SAVING DATA")
+    
+    return success
+
+def get_data_template():
+    """Initialize data format for a visitor record"""
+    return {
+        "_id": str(ObjectId()) if MONGODB_AVAILABLE else f"local_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "type": "visit",
+        "visitor_id": current_visitor_id + 1,
+        "start_time": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
+        "end_time": None,
+        "duration": None
+    }
 
 def record_entry():
     """Record a new visitor entry"""
@@ -258,16 +273,10 @@ def record_entry():
     current_state = STATE_OCCUPIED
     
     # Create visit record
-    entry = {
-        "type": "visit",
-        "visitor_id": current_visitor_id,
-        "start_time": datetime.datetime.fromtimestamp(current_time).strftime("%Y-%m-%dT%H:%M:%S.000000"),
-        "end_time": None,
-        "duration": None
-    }
+    entry = get_data_template()
     
     # Save data
-    save_visit_data(entry)
+    save_visitor_data(entry)
     
     # Audio feedback
     double_beep()
@@ -288,16 +297,14 @@ def record_exit():
     current_state = STATE_VACANT
     
     # Create visit record with exit info
-    entry = {
-        "type": "visit",
-        "visitor_id": current_visitor_id,
-        "start_time": datetime.datetime.fromtimestamp(current_start_time).strftime("%Y-%m-%dT%H:%M:%S.000000"),
-        "end_time": datetime.datetime.fromtimestamp(current_time).strftime("%Y-%m-%dT%H:%M:%S.000000"),
-        "duration": int(duration)
-    }
+    entry = get_data_template()
+    entry["visitor_id"] = current_visitor_id
+    entry["start_time"] = datetime.datetime.fromtimestamp(current_start_time).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    entry["end_time"] = datetime.datetime.fromtimestamp(current_time).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    entry["duration"] = int(duration)
     
     # Save data
-    save_visit_data(entry)
+    save_visitor_data(entry)
     
     # Audio feedback
     beep_buzzer(LONG_BEEP)
@@ -319,8 +326,8 @@ def display_status():
     # Calculate total visitors from JSON
     total = 0
     try:
-        if os.path.exists(JSON_FILE):
-            with open(JSON_FILE, 'r') as f:
+        if os.path.exists(LOCAL_FILE):
+            with open(LOCAL_FILE, 'r') as f:
                 data = json.load(f)
                 total = len(data)
     except:
@@ -337,7 +344,7 @@ def display_status():
         print(line)
     print("-" * 40)
 
-def signal_handler(sig, frame):
+def signal_handler(signum, frame):
     """Handle Ctrl+C to exit cleanly"""
     global running
     print("\nStopping...")
@@ -390,8 +397,17 @@ def monitor_occupancy():
         log_message("Critical error: System check failed")
         return
     
-    # Load previous data
-    load_visitor_count()
+    # Initialize storage system
+    if not initialize_storage():
+        log_message("Failed to initialize storage system")
+        return
+    
+    # Connect to MongoDB first
+    mongodb_connected = connect_to_mongodb()
+    if mongodb_connected:
+        log_message("MongoDB connected. Data will be saved to remote and local storage.")
+    else:
+        log_message("No MongoDB connection. Data will be saved to local storage only.")
     
     # Display initial status
     display_status()

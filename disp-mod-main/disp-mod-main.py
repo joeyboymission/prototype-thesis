@@ -6,28 +6,15 @@ import lgpio
 import signal
 import sys
 from datetime import datetime
+from bson import ObjectId
 
 # Try to import MongoDB libraries, but have a fallback if not available
 try:
     from pymongo import MongoClient
-    from pymongo.errors import ServerSelectionTimeoutError
-    from bson import ObjectId
     MONGODB_AVAILABLE = True
-    
-    # Create a custom JSON encoder to handle MongoDB ObjectId
-    class MongoJSONEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, ObjectId):
-                return str(obj)  # Convert ObjectId to string
-            return super().default(obj)
-            
 except ImportError:
     MONGODB_AVAILABLE = False
     print("Warning: pymongo not available. Using local storage only.")
-    
-    # Fallback encoder if MongoDB is not available
-    class MongoJSONEncoder(json.JSONEncoder):
-        pass
 
 # Configuration
 GPIO_CHIP = 0
@@ -40,8 +27,8 @@ SIGNIFICANT_CHANGE_THRESHOLD = 10.0  # Save data when volume changes by this amo
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
 
 # Local storage settings
-DATA_DIR = "local-data"
-JSON_FILE = os.path.join(DATA_DIR, "dispenser-data.json")
+DATA_DIR = "/home/admin/Documents/local-data"
+LOCAL_FILE = os.path.join(DATA_DIR, "dispenser-data.json")
 
 # Calibration data for each container
 CALIBRATION_DATA = {
@@ -54,19 +41,177 @@ CALIBRATION_DATA = {
 # Global variables
 h = None                  # GPIO handle
 mongo_client = None       # MongoDB client
+mongo_db = None           # MongoDB database
 mongo_collection = None   # MongoDB collection
-reading_counter = 0       # Reading counter
-previous_volumes = {}     # Previous volume readings
-last_saved_volumes = {}   # Last saved volume readings
 running = True            # Flag to control the main loop
+reading_counter = 0       # Reading counter
+previous_readings = None  # Previous readings
 
-def get_timestamp():
-    """Return formatted timestamp string [YYYY-MM-DD HH:MM:SS]"""
-    return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+def get_data_template():
+    """Initialize data format for a dispenser reading"""
+    return {
+        "_id": str(ObjectId()) if MONGODB_AVAILABLE else f"local_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "reading": reading_counter + 1,
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "data": {
+            "CONT1": {
+                "distance_cm": 0.0,
+                "remaining_volume_ml": 0.0
+            },
+            "CONT2": {
+                "distance_cm": 0.0,
+                "remaining_volume_ml": 0.0
+            },
+            "CONT3": {
+                "distance_cm": 0.0,
+                "remaining_volume_ml": 0.0
+            },
+            "CONT4": {
+                "distance_cm": 0.0,
+                "remaining_volume_ml": 0.0
+            }
+        }
+    }
+
+def initialize_storage():
+    """Initialize storage system and check existing data"""
+    global reading_counter
+    
+    log_message("Checking storage system...")
+    
+    # Create local data directory if it doesn't exist
+    if not os.path.exists(DATA_DIR):
+        log_message(f"Creating local data directory: {DATA_DIR}")
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+        except Exception as e:
+            log_message(f"Error creating data directory: {e}")
+            return False
+    
+    # Check local file
+    if os.path.exists(LOCAL_FILE):
+        try:
+            with open(LOCAL_FILE, "r") as f:
+                data = json.load(f)
+                if data:
+                    latest = data[-1]
+                    reading_counter = latest["reading"]
+                    log_message(f"Found {len(data)} existing records in local storage")
+                    log_message(f"Latest reading number: {reading_counter}")
+        except Exception as e:
+            log_message(f"Error reading local data file: {e}")
+    else:
+        log_message("Local data file does not exist, will create when first data is saved")
+    
+    return True
+
+def connect_to_mongodb():
+    """Connect to MongoDB and restore latest state"""
+    global mongo_client, mongo_db, mongo_collection, reading_counter
+    
+    if not MONGODB_AVAILABLE:
+        log_message("MongoDB support not available, using local storage only.")
+        return False
+    
+    try:
+        log_message("Connecting to MongoDB...")
+        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        # Test connection
+        mongo_client.admin.command('ping')
+        
+        mongo_db = mongo_client["Smart_Cubicle"]
+        mongo_collection = mongo_db["dispenser"]
+        
+        # Check if collection exists and has data
+        if mongo_collection.count_documents({}) > 0:
+            log_message("Found existing data in remote database")
+            latest_doc = mongo_collection.find_one(sort=[("reading", -1)])
+            if latest_doc:
+                reading_counter = latest_doc["reading"]
+                log_message(f"Latest remote reading number: {reading_counter}")
+        
+        log_message("Connected to MongoDB successfully!")
+        return True
+    except Exception as e:
+        log_message(f"MongoDB connection error: {e}")
+        mongo_client = None
+        mongo_db = None
+        mongo_collection = None
+        return False
+
+def save_to_local_storage(data):
+    """Save data to local JSON file"""
+    try:
+        # Ensure the directory exists
+        os.makedirs(DATA_DIR, exist_ok=True)
+        
+        existing_data = []
+        if os.path.exists(LOCAL_FILE):
+            try:
+                with open(LOCAL_FILE, "r") as f:
+                    existing_data = json.load(f)
+            except json.JSONDecodeError:
+                log_message("Creating new data file (existing file corrupt)")
+        
+        # Ensure data has the correct format
+        if not isinstance(existing_data, list):
+            existing_data = []
+        
+        existing_data.append(data)
+        
+        # Use atomic write to prevent corruption
+        temp_file = LOCAL_FILE + ".tmp"
+        with open(temp_file, "w") as f:
+            json.dump(existing_data, f, indent=2)
+        os.replace(temp_file, LOCAL_FILE)
+        
+        return True
+    except Exception as e:
+        log_message(f"Local storage error: {e}")
+        return False
+
+def save_dispenser_data(dispenser_data):
+    """Save dispenser data to both MongoDB and local storage"""
+    success = True
+    
+    if MONGODB_AVAILABLE and mongo_collection:
+        try:
+            mongo_collection.insert_one(dispenser_data)
+        except Exception as e:
+            log_message(f"Error saving to MongoDB: {e}")
+            success = False
+    
+    local_success = save_to_local_storage(dispenser_data)
+    if not local_success:
+        success = False
+    
+    if success:
+        log_message("DATA SAVED TO REMOTE AND LOCAL")
+    else:
+        log_message("ERROR SAVING DATA")
+    
+    return success
+
+def should_save_reading(current_reading):
+    """Determine if the current reading should be saved based on changes"""
+    if previous_readings is None:
+        return True
+    
+    # Check for significant changes in any container
+    for container in ["CONT1", "CONT2", "CONT3", "CONT4"]:
+        curr_vol = current_reading["data"][container]["remaining_volume_ml"]
+        prev_vol = previous_readings["data"][container]["remaining_volume_ml"]
+        
+        # If volume change is 1ml or more, save the reading
+        if abs(curr_vol - prev_vol) >= 1.0:
+            return True
+    
+    return False
 
 def log_message(message):
-    """Print a message with timestamp"""
-    print(f"{get_timestamp()} {message}")
+    """Log a message with timestamp"""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {message}")
 
 def setup_gpio():
     """Initialize GPIO for ultrasonic sensors"""
@@ -88,30 +233,6 @@ def setup_gpio():
         return True
     except Exception as e:
         log_message(f"Error initializing GPIO: {e}")
-        return False
-
-def connect_to_mongodb():
-    """Connect to MongoDB database"""
-    global mongo_client, mongo_collection
-    
-    if not MONGODB_AVAILABLE:
-        log_message("MongoDB support not available, using local storage only.")
-        return False
-        
-    try:
-        log_message("Connecting to MongoDB...")
-        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        mongo_client.admin.command('ping')  # Test connection
-        
-        db = mongo_client['Smart_Cubicle']
-        mongo_collection = db['dispenser_resource']
-        
-        log_message("Connected to MongoDB successfully!")
-        return True
-    except Exception as e:
-        log_message(f"Warning: Failed to connect to MongoDB: {e}. Falling back to local JSON.")
-        mongo_client = None
-        mongo_collection = None
         return False
 
 def measure_distance(trigger, echo, num_measurements=5):
@@ -176,343 +297,67 @@ def calculate_volume(container, distance):
         volume = 425.0 * volume_fraction
         return round(volume, 2)
 
-def load_last_reading():
-    """Load the last reading from database to continue counter"""
-    global reading_counter
-    
-    log_message("Checking for previous readings...")
-    
-    # Try MongoDB first if available
-    if mongo_collection is not None:
-        try:
-            # Find highest reading number
-            last_record = mongo_collection.find_one(sort=[("reading", -1)])
-            if last_record and "reading" in last_record:
-                reading_counter = last_record["reading"]
-                log_message(f"Loaded reading counter from MongoDB: {reading_counter}")
-                return True
-        except Exception as e:
-            log_message(f"Error loading from MongoDB: {e}")
-    
-    # Try local storage if MongoDB failed or not available
-    try:
-        if os.path.exists(JSON_FILE):
-            with open(JSON_FILE, 'r') as f:
-                data = json.load(f)
-                if isinstance(data, list) and len(data) > 0:
-                    # Find highest reading number
-                    readings = [entry.get("reading", 0) for entry in data]
-                    if readings:
-                        reading_counter = max(readings)
-                        log_message(f"Loaded reading counter from local storage: {reading_counter}")
-                        return True
-    except Exception as e:
-        log_message(f"Error loading from local storage: {e}")
-    
-    # If no data found, start from zero
-    reading_counter = 0
-    log_message("No previous readings found, starting with reading counter: 0")
-    return False
-
-def save_data(data):
-    """Save data to local JSON file and MongoDB if available"""
-    # Create directory if it doesn't exist
-    os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
-    
-    # Format data for storage
-    formatted_data = {
-        "reading": data["reading"],
-        "timestamp": data["timestamp"],
-        "data": {
-            "CONT1": {
-                "distance_cm": round(data["data"]["CONT1"]["distance_cm"], 2),
-                "previous_volume_ml": round(data["data"]["CONT1"]["previous_volume_ml"], 2),
-                "remaining_volume_ml": round(data["data"]["CONT1"]["remaining_volume_ml"], 2)
-            },
-            "CONT2": {
-                "distance_cm": round(data["data"]["CONT2"]["distance_cm"], 2),
-                "previous_volume_ml": round(data["data"]["CONT2"]["previous_volume_ml"], 2),
-                "remaining_volume_ml": round(data["data"]["CONT2"]["remaining_volume_ml"], 2)
-            },
-            "CONT3": {
-                "distance_cm": round(data["data"]["CONT3"]["distance_cm"], 2),
-                "previous_volume_ml": round(data["data"]["CONT3"]["previous_volume_ml"], 2),
-                "remaining_volume_ml": round(data["data"]["CONT3"]["remaining_volume_ml"], 2)
-            },
-            "CONT4": {
-                "distance_cm": round(data["data"]["CONT4"]["distance_cm"], 2),
-                "previous_volume_ml": round(data["data"]["CONT4"]["previous_volume_ml"], 2),
-                "remaining_volume_ml": round(data["data"]["CONT4"]["remaining_volume_ml"], 2)
-            }
-        }
-    }
-    
-    # Save to local storage
-    try:
-        # Read existing data
-        existing_data = []
-        if os.path.exists(JSON_FILE):
-            try:
-                with open(JSON_FILE, "r") as f:
-                    existing_data = json.load(f)
-            except json.JSONDecodeError:
-                log_message("Warning: Existing file corrupt, creating new file")
-        
-        # Append new reading
-        existing_data.append(formatted_data)
-        
-        # Use atomic write to prevent corruption
-        temp_file = JSON_FILE + ".tmp"
-        with open(temp_file, "w") as f:
-            json.dump(existing_data, f, indent=2, cls=MongoJSONEncoder)
-        os.replace(temp_file, JSON_FILE)
-        
-        log_message("Data saved to local storage")
-        local_saved = True
-    except Exception as e:
-        log_message(f"Error saving to local storage: {e}")
-        local_saved = False
-    
-    # Save to MongoDB if available
-    if mongo_collection is not None:
-        try:
-            mongo_collection.insert_one(formatted_data)
-            log_message("Data also saved to MongoDB")
-            mongo_saved = True
-        except Exception as e:
-            log_message(f"Error saving to MongoDB: {e}")
-            mongo_saved = False
-    else:
-        mongo_saved = False
-    
-    # Report overall status
-    if local_saved and mongo_saved:
-        log_message("Status: DATA SAVED TO REMOTE AND LOCAL")
-    elif local_saved:
-        log_message("Status: DATA SAVED TO LOCAL ONLY")
-    else:
-        log_message("Status: FAILED TO SAVE DATA")
-        
-    return local_saved or mongo_saved
-
-def signal_handler(sig, frame):
-    """Handle Ctrl+C to exit cleanly"""
+def signal_handler(signum, frame):
+    """Handle Ctrl+C gracefully"""
     global running
-    print("\nStopping...")
+    log_message("Shutting down...")
+    
+    # Save final reading regardless of changes
+    if previous_readings:
+        save_dispenser_data(previous_readings)
+    
     running = False
 
-def perform_system_check():
-    """Test all system components"""
-    log_message("Performing system check...")
-    
-    # Check GPIO
-    gpio_ok = setup_gpio()
-    if gpio_ok:
-        log_message("✓ GPIO initialized")
-    else:
-        log_message("✗ GPIO initialization failed")
-        return False
-    
-    # Check sensors
-    sensors_ok = True
-    log_message("Testing ultrasonic sensors...")
-    for i, (trigger, echo) in enumerate(zip(TRIGGERS, ECHOS)):
-        distance = measure_distance(trigger, echo)
-        if distance is not None and 0 < distance < 400:  # Valid range: 0-400cm
-            log_message(f"✓ SONIC{i+1} online - distance: {distance:.2f} cm")
-        else:
-            log_message(f"✗ SONIC{i+1} offline or out of range")
-            sensors_ok = False
-    
-    # Check MongoDB
-    mongodb_ok = connect_to_mongodb()
-    
-    # Check local storage
-    try:
-        os.makedirs(DATA_DIR, exist_ok=True)
-        with open(os.path.join(DATA_DIR, "test.tmp"), "w") as f:
-            f.write("test")
-        os.remove(os.path.join(DATA_DIR, "test.tmp"))
-        log_message("✓ Local storage accessible")
-        storage_ok = True
-    except Exception as e:
-        log_message(f"✗ Local storage error: {e}")
-        storage_ok = False
-    
-    # Overall result
-    if gpio_ok and sensors_ok and (mongodb_ok or storage_ok):
-        log_message("System check: PASSED")
-        return True
-    else:
-        if not sensors_ok:
-            log_message("WARNING: Some sensors are not responding. System may not function properly.")
-        if not mongodb_ok and not storage_ok:
-            log_message("ERROR: No storage available. Cannot continue.")
-            return False
-        log_message("System check: PASSED WITH WARNINGS")
-        return True
-
-def start_monitoring():
-    """Main function to monitor dispenser containers"""
-    global reading_counter, previous_volumes, last_saved_volumes, running
+def main():
+    global running, reading_counter, previous_readings
     
     # Setup signal handler for Ctrl+C
     signal.signal(signal.SIGINT, signal_handler)
     
-    # Perform system check
-    if not perform_system_check():
-        log_message("Critical error: System check failed")
+    log_message("=== Dispenser Module Starting ===")
+    
+    # Initialize storage system
+    if not initialize_storage():
+        log_message("Failed to initialize storage system")
         return
     
-    # Load last reading counter
-    load_last_reading()
+    # Connect to MongoDB first
+    mongodb_connected = connect_to_mongodb()
+    if mongodb_connected:
+        log_message("MongoDB connected. Data will be saved to remote and local storage.")
+    else:
+        log_message("No MongoDB connection. Data will be saved to local storage only.")
     
-    log_message("Detecting the initial volume for each container...")
+    # Initialize GPIO
+    if not setup_gpio():
+        log_message("Failed to initialize GPIO")
+        return
     
-    # Initial readings
-    initial_readings = []
-    for i, (trigger, echo) in enumerate(zip(TRIGGERS, ECHOS)):
-        container = f"CONT{i+1}"
-        distance = measure_distance(trigger, echo)
-        volume = calculate_volume(container, distance)
+    log_message("Detecting initial volume for each container...")
+    
+    while running:
+        # Create data template
+        data = get_data_template()
         
-        # Store as both previous and last saved
-        previous_volumes[container] = volume
-        last_saved_volumes[container] = volume
-        
-        # Add to display
-        if distance is not None and volume is not None:
-            initial_readings.append(f"{container}: {distance:.2f} cm {volume:.2f} ml")
-        else:
-            initial_readings.append(f"{container}: ERROR")
-    
-    # Display initial readings
-    log_message(" | ".join(initial_readings))
-    log_message("The sensors are ready!")
-    
-    # Main monitoring loop
-    log_message("Starting continuous monitoring. Press Ctrl+C to stop.")
-    last_reading_time = time.time()
-    
-    try:
-        while running:
-            current_time = time.time()
-            
-            # Check if it's time for a new reading
-            if current_time - last_reading_time >= READING_INTERVAL:
-                reading_counter += 1
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                significant_change = False
-                current_readings = []
-                
-                # Read all containers
-                current_data = {
-                    "reading": reading_counter,
-                    "timestamp": timestamp,
-                    "data": {}
-                }
-                
-                for i, (trigger, echo) in enumerate(zip(TRIGGERS, ECHOS)):
-                    container = f"CONT{i+1}"
-                    distance = measure_distance(trigger, echo)
-                    volume = calculate_volume(container, distance)
-                    
-                    # Check if this is a significant change
-                    prev_volume = previous_volumes.get(container, 0)
-                    last_saved = last_saved_volumes.get(container, 0)
-                    
-                    if volume is not None and last_saved is not None:
-                        if abs(volume - last_saved) >= SIGNIFICANT_CHANGE_THRESHOLD:
-                            significant_change = True
-                            last_saved_volumes[container] = volume
-                    
-                    # Format for display
-                    if distance is not None and volume is not None:
-                        current_readings.append(f"{container}: {distance:.2f} cm {volume:.2f} ml")
-                    else:
-                        current_readings.append(f"{container}: ERROR")
-                    
-                    # Store data
-                    current_data["data"][container] = {
-                        "distance_cm": distance if distance is not None else 0,
-                        "previous_volume_ml": prev_volume if prev_volume is not None else 0,
-                        "remaining_volume_ml": volume if volume is not None else 0
-                    }
-                    
-                    # Update previous volume
-                    previous_volumes[container] = volume
-                
-                # Display current readings
-                log_message(" | ".join(current_readings))
-                
-                # Save data if significant change detected
-                if significant_change:
-                    save_data(current_data)
-                
-                last_reading_time = current_time
-                
-            # Small delay to prevent CPU overuse
-            time.sleep(0.1)
-            
-    except KeyboardInterrupt:
-        log_message("Monitoring interrupted by user")
-    finally:
-        # Save final reading regardless of changes
-        log_message("Saving final reading before exit...")
-        
-        # Create final reading data
-        final_data = {
-            "reading": reading_counter + 1,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "data": {}
-        }
-        
+        # Read all containers
         for i, (trigger, echo) in enumerate(zip(TRIGGERS, ECHOS)):
             container = f"CONT{i+1}"
             distance = measure_distance(trigger, echo)
             volume = calculate_volume(container, distance)
-            prev_volume = previous_volumes.get(container, 0)
             
-            final_data["data"][container] = {
-                "distance_cm": distance if distance is not None else 0,
-                "previous_volume_ml": prev_volume if prev_volume is not None else 0,
-                "remaining_volume_ml": volume if volume is not None else 0
-            }
+            # Store data
+            data["data"][container]["distance_cm"] = distance if distance is not None else 0
+            data["data"][container]["remaining_volume_ml"] = volume if volume is not None else 0
         
-        save_data(final_data)
-
-def main():
-    """Main program entry point"""
-    try:
-        # Print welcome message
-        print("\n" + "="*80)
-        print("╔═══════════════════════════════════════════════════╗")
-        print("║              SMART RESTROOM SYSTEM                ║")
-        print("║                DISPENSER MODULE                   ║")
-        print("╚═══════════════════════════════════════════════════╝")
-        print("="*80)
+        # Check if this reading should be saved
+        if should_save_reading(data):
+            save_dispenser_data(data)
         
-        log_message("Dispenser Module Starting")
+        # Update previous readings
+        previous_readings = data
         
-        # Create data directory
-        os.makedirs(DATA_DIR, exist_ok=True)
-        
-        # Start monitoring
-        start_monitoring()
-        
-    except Exception as e:
-        log_message(f"Unhandled error: {e}")
-    finally:
-        # Clean up
-        if h is not None:
-            for pin in TRIGGERS + ECHOS:
-                lgpio.gpio_free(h, pin)
-            lgpio.gpiochip_close(h)
-        
-        if mongo_client is not None:
-            mongo_client.close()
-            
-        log_message("Dispenser Module Stopped")
+        # Wait for the next reading interval
+        time.sleep(READING_INTERVAL)
 
 if __name__ == "__main__":
     main()
