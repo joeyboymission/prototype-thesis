@@ -55,29 +55,43 @@ def get_data_template():
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "data": {
             "CONT1": {
-                "distance_cm": 0.0,
-                "remaining_volume_ml": 0.0
+                "distance_cm": 0.00,
+                "previous_volume_ml": 0.00,
+                "remaining_volume_ml": 0.00
             },
             "CONT2": {
-                "distance_cm": 0.0,
-                "remaining_volume_ml": 0.0
+                "distance_cm": 0.00,
+                "previous_volume_ml": 0.00,
+                "remaining_volume_ml": 0.00
             },
             "CONT3": {
-                "distance_cm": 0.0,
-                "remaining_volume_ml": 0.0
+                "distance_cm": 0.00,
+                "previous_volume_ml": 0.00,
+                "remaining_volume_ml": 0.00
             },
             "CONT4": {
-                "distance_cm": 0.0,
-                "remaining_volume_ml": 0.0
+                "distance_cm": 0.00,
+                "previous_volume_ml": 0.00,
+                "remaining_volume_ml": 0.00
             }
         }
     }
+
+def log_sensor_readings(data):
+    """Log current sensor readings in the required format"""
+    readings = []
+    for i in range(1, 5):
+        container = f"CONT{i}"
+        dist = data["data"][container]["distance_cm"]
+        vol = data["data"][container]["remaining_volume_ml"]
+        readings.append(f"{container}: {dist:.2f} cm {vol:.2f} ml")
+    log_message(" | ".join(readings))
 
 def initialize_storage():
     """Initialize storage system and check existing data"""
     global reading_counter
     
-    log_message("Checking storage system...")
+    log_message("Checking the connection to Database...")
     
     # Create local data directory if it doesn't exist
     if not os.path.exists(DATA_DIR):
@@ -114,7 +128,7 @@ def connect_to_mongodb():
         return False
     
     try:
-        log_message("Connecting to MongoDB...")
+        log_message("Checking the connection to Database...")
         mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         # Test connection
         mongo_client.admin.command('ping')
@@ -130,7 +144,7 @@ def connect_to_mongodb():
                 reading_counter = latest_doc.get("reading", 0)
                 log_message(f"Latest remote reading number: {reading_counter}")
         
-        log_message("Connected to MongoDB successfully!")
+        log_message("Database Connected Successfully!")
         return True
     except Exception as e:
         log_message(f"MongoDB connection error: {e}")
@@ -146,7 +160,6 @@ def save_to_mongodb(data):
     
     try:
         mongo_collection.insert_one(data)
-        log_message("Data saved to MongoDB")
         return True
     except Exception as e:
         log_message(f"Error saving to MongoDB: {e}")
@@ -187,13 +200,6 @@ def save_dispenser_data(dispenser_data):
     """Save dispenser data to both MongoDB and local storage"""
     mongodb_success = save_to_mongodb(dispenser_data)
     local_success = save_to_local_storage(dispenser_data)
-    
-    if mongodb_success and local_success:
-        log_message("Data saved to both remote and local storage")
-    elif local_success:
-        log_message("Data saved to local storage only")
-    else:
-        log_message("Failed to save data")
     
     return mongodb_success or local_success
 
@@ -322,24 +328,43 @@ def main():
         
         log_message("=== Dispenser Module Starting ===")
         
+        # Connect to MongoDB first
+        mongodb_connected = connect_to_mongodb()
+        if not mongodb_connected:
+            log_message("No MongoDB connection. Using local storage only.")
+        
         # Initialize storage system
         if not initialize_storage():
             log_message("Failed to initialize storage system")
             return
-        
-        # Connect to MongoDB first
-        mongodb_connected = connect_to_mongodb()
-        if mongodb_connected:
-            log_message("MongoDB connected. Data will be saved to remote and local storage.")
-        else:
-            log_message("No MongoDB connection. Data will be saved to local storage only.")
         
         # Initialize GPIO
         if not setup_gpio():
             log_message("Failed to initialize GPIO")
             return
         
-        log_message("Detecting initial volume for each container...")
+        log_message("Detecting the initial volume for each container...")
+        
+        # Create initial data template
+        data = get_data_template()
+        
+        # Read all containers
+        for i, (trigger, echo) in enumerate(zip(TRIGGERS, ECHOS)):
+            container = f"CONT{i+1}"
+            distance = measure_distance(trigger, echo)
+            volume = calculate_volume(container, distance)
+            
+            # Store data with 2 decimal precision
+            data["data"][container]["distance_cm"] = round(distance if distance is not None else 0.00, 2)
+            data["data"][container]["remaining_volume_ml"] = round(volume if volume is not None else 0.00, 2)
+            if previous_readings and previous_readings["data"][container]["remaining_volume_ml"] is not None:
+                data["data"][container]["previous_volume_ml"] = round(previous_readings["data"][container]["remaining_volume_ml"], 2)
+            else:
+                data["data"][container]["previous_volume_ml"] = data["data"][container]["remaining_volume_ml"]
+        
+        # Log initial readings
+        log_sensor_readings(data)
+        log_message("The sensors are ready!")
         
         while running:
             # Create data template
@@ -351,13 +376,19 @@ def main():
                 distance = measure_distance(trigger, echo)
                 volume = calculate_volume(container, distance)
                 
-                # Store data
-                data["data"][container]["distance_cm"] = distance if distance is not None else 0
-                data["data"][container]["remaining_volume_ml"] = volume if volume is not None else 0
+                # Store data with 2 decimal precision
+                data["data"][container]["distance_cm"] = round(distance if distance is not None else 0.00, 2)
+                data["data"][container]["remaining_volume_ml"] = round(volume if volume is not None else 0.00, 2)
+                if previous_readings and previous_readings["data"][container]["remaining_volume_ml"] is not None:
+                    data["data"][container]["previous_volume_ml"] = round(previous_readings["data"][container]["remaining_volume_ml"], 2)
+                else:
+                    data["data"][container]["previous_volume_ml"] = data["data"][container]["remaining_volume_ml"]
             
             # Check if this reading should be saved
             if should_save_reading(data):
                 save_dispenser_data(data)
+                # Log the readings after saving
+                log_sensor_readings(data)
             
             # Update previous readings
             previous_readings = data
