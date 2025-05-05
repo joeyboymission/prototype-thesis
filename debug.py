@@ -650,6 +650,28 @@ class OdorModule(ModuleBase):
         # Simulation variables
         self.simulation_timer = 0
         
+        # Initialize missing attributes
+        self.aqi_change_timer = 0
+        self.aqi_trend = 0
+        self.aqi_history = []
+        self.is_occupied = False
+        self.last_exit_time = time.time()
+        self.FAN_POST_EXIT_DURATION = 300  # 5 minutes
+        self.fan_status = False
+        self.freshener_triggered = False
+        self.last_spray_time = time.time()
+        
+        # Initialize sensor data
+        self.sensor_data = {
+            f"sensor_{i+1}": {
+                "temperature": random.uniform(20, 30),
+                "humidity": random.uniform(40, 70),
+                "aqi": random.uniform(100, 300),
+                "temp_status": "Online",
+                "gas_status": "Online"
+            } for i in range(4)
+        }
+    
     def perform_post_check(self):
         """Perform Power-On Self Test to verify all sensors are working"""
         print("\nConnected to the MongoDB successfully")

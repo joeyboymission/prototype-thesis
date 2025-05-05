@@ -31,8 +31,12 @@ except ImportError:
     MONGODB_AVAILABLE = False
     print("Warning: pymongo not available. Using local storage only.")
 
-# Constants for DC exhaust fan
-K1_PIN = 20  # GPIO20, Pin 38 for 8RELAY-B K1 (DC Fan)
+# GPIO pins from pin-config.md
+K1_PIN = 20  # 8RELAY-B K1 (DC Fan): GPIO20 (Pin 38)
+K2_PIN = 23  # 8RELAY-B K2 (Exhaust Fan): GPIO23 (Pin 16) - shared with odor module
+K3_PIN = 24  # 8RELAY-B K3 (Air Freshener): GPIO24 (Pin 18) - shared with odor module
+
+# Temperature check interval
 TEMP_CHECK_INTERVAL = 5  # Seconds between temperature checks
 
 # CPU Temperature thresholds (in Celsius)
@@ -429,7 +433,7 @@ class CentralHubModule(ModuleBase):
         while self.running and not self.stop_event.is_set():
             if not self.paused:
                 try:
-                    current_time = time.time()
+                current_time = time.time()
                     
                     # Check module status at regular intervals
                     if current_time - last_check_time >= self.MODULE_CHECK_INTERVAL:
@@ -451,7 +455,6 @@ class CentralHubModule(ModuleBase):
                         self.reading_counter += 1
                         
                         last_sync_time = current_time
-                    
                 except Exception as e:
                     self.log_message(f"Error in central hub: {e}")
                 

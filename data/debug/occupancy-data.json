@@ -47,11 +47,16 @@
             "end_time": 1745889015.1220462,
             "duration": 264.28174662590027,
             "end_time_iso": "2025-04-29T09:10:15.122046"
+        },
+        {
+            "visitor_id": 7,
+            "start_time": 1746449090.0145679,
+            "start_time_iso": "2025-05-05T20:44:50.014568"
         }
     ],
     "summary": {
         "total_visitors": 6,
         "average_duration": 428.1005919774373
     },
-    "current_presence": false
+    "current_presence": true
 }

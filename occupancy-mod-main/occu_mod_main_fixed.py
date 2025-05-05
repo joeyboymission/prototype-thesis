@@ -129,6 +129,9 @@ class OccupancyModule(ModuleBase):
         self.PIR_PINS = [17]  # E18-D80NK Proximity Sensor: GPIO17 (Pin 11)
         self.BUZZER_PIN = 27  # Buzzer: GPIO27 (Pin 13)
         
+        # LED pins - update to use the available pins according to pin-config.md
+        self.LED_PINS = [16, 21, 25]  # Available pins according to pin-config.md
+        
         self.READING_INTERVAL = 1     # Seconds between readings
         
         # MongoDB settings
@@ -145,6 +148,7 @@ class OccupancyModule(ModuleBase):
                 "occupied_time": None,
                 "previous_status": None,
                 "sensor_state": "DOWN",
+                "led_state": "OFF",
                 "last_change": None,
                 "last_reading": time.time()
             } for i in range(3)
@@ -338,7 +342,7 @@ class OccupancyModule(ModuleBase):
         return False
 
     def setup_hardware(self):
-        """Initialize GPIO for PIR sensors"""
+        """Initialize GPIO for PIR sensors and LEDs"""
         global LGPIO_AVAILABLE
         
         if not LGPIO_AVAILABLE:
@@ -361,6 +365,16 @@ class OccupancyModule(ModuleBase):
                 except Exception as e:
                     self.log_message(f"Could not claim PIR sensor on GPIO{pir}: {e}")
             
+            # Try to claim each LED pin, skipping any that are already in use
+            for led in self.LED_PINS:
+                try:
+                    lgpio.gpio_claim_output(self.h, led)
+                    lgpio.gpio_write(self.h, led, 0)  # Initialize LEDs to OFF
+                    self.claimed_pins.append(led)
+                    self.log_message(f"Successfully claimed LED on GPIO{led}")
+                except Exception as e:
+                    self.log_message(f"Could not claim LED on GPIO{led}: {e}")
+            
             # Check if we were able to claim at least some pins
             if self.claimed_pins:
                 self.log_message(f"GPIO initialized with {len(self.claimed_pins)} pins")
@@ -381,6 +395,8 @@ class OccupancyModule(ModuleBase):
             # Only clean up pins that were successfully claimed
             for pin in self.claimed_pins:
                 try:
+                    if pin in self.LED_PINS:
+                        lgpio.gpio_write(self.h, pin, 0)  # Turn off LEDs
                     lgpio.gpio_free(self.h, pin)
                     self.log_message(f"Released GPIO{pin}")
                 except:
@@ -394,6 +410,27 @@ class OccupancyModule(ModuleBase):
             self.h = None
             self.claimed_pins = []
             self.log_message("GPIO resources cleaned up")
+
+    def set_led_state(self, led_index, state):
+        """Set LED state (0=OFF, 1=ON)"""
+        if not LGPIO_AVAILABLE:
+            return True
+
+        # Check if we have a valid GPIO handle
+        if self.h is None:
+            return False
+        
+        # Check if the pin is within range and was successfully claimed
+        if 0 <= led_index < len(self.LED_PINS):
+            led_pin = self.LED_PINS[led_index]
+            if led_pin in self.claimed_pins:
+                try:
+                    lgpio.gpio_write(self.h, led_pin, state)
+                    return True
+                except Exception as e:
+                    self.log_message(f"Error setting LED {led_index} state: {e}")
+        
+        return False
 
     def read_pir_sensor(self, pir_index):
         """Read PIR sensor state (0=No motion, 1=Motion detected)"""
@@ -433,12 +470,18 @@ class OccupancyModule(ModuleBase):
             self.log_message("✗ GPIO initialization failed")
             return False
         
-        # Check sensors
+        # Check sensors and LEDs
         sensors_ok = True
-        self.log_message("Testing PIR sensors...")
+        self.log_message("Testing PIR sensors and LEDs...")
         for i in range(len(self.PIR_PINS)):
             sensor_value = self.read_pir_sensor(i)
             self.log_message(f"✓ PIR{i+1} reading: {sensor_value}")
+            
+            # Test LED
+            self.set_led_state(i, 1)  # Turn ON
+            time.sleep(0.5)
+            self.set_led_state(i, 0)  # Turn OFF
+            self.log_message(f"✓ LED{i+1} tested")
             
             # Update sensor state
             self.cubicle_data[f"CUB{i+1}"]["sensor_state"] = "UP"
@@ -522,11 +565,15 @@ class OccupancyModule(ModuleBase):
             # Set status based on PIR reading
             new_status = "OCCUPIED" if pir_state else "VACANT"
             
+            # Update LED based on occupancy
+            self.set_led_state(i, 1 if new_status == "OCCUPIED" else 0)
+            
             # Update cubicle data
             self.cubicle_data[cubicle]["status"] = new_status
             self.cubicle_data[cubicle]["previous_status"] = new_status
             self.cubicle_data[cubicle]["occupied_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if new_status == "OCCUPIED" else None
             self.cubicle_data[cubicle]["sensor_state"] = "UP"
+            self.cubicle_data[cubicle]["led_state"] = "ON" if new_status == "OCCUPIED" else "OFF"
             self.cubicle_data[cubicle]["last_change"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             # Store data for saving
@@ -564,6 +611,9 @@ class OccupancyModule(ModuleBase):
                             # Determine new status
                             new_status = "OCCUPIED" if pir_state else "VACANT"
                             
+                            # Update LED based on occupancy
+                            self.set_led_state(i, 1 if new_status == "OCCUPIED" else 0)
+                            
                             # Check if status changed
                             status_changed = new_status != prev_status
                             
@@ -579,6 +629,7 @@ class OccupancyModule(ModuleBase):
                             self.cubicle_data[cubicle]["previous_status"] = prev_status
                             self.cubicle_data[cubicle]["status"] = new_status
                             self.cubicle_data[cubicle]["occupied_time"] = occupied_time
+                            self.cubicle_data[cubicle]["led_state"] = "ON" if new_status == "OCCUPIED" else "OFF"
                             self.cubicle_data[cubicle]["last_reading"] = current_time
                             
                             if status_changed:
@@ -615,6 +666,8 @@ class OccupancyModule(ModuleBase):
         
         for i in range(len(self.PIR_PINS)):
             cubicle = f"CUB{i+1}"
+            # Turn off LEDs
+            self.set_led_state(i, 0)
             
             # Store final state
             final_data["data"][cubicle]["status"] = self.cubicle_data[cubicle]["status"]

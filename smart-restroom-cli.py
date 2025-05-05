@@ -137,7 +137,7 @@ def display_recent_logs(module_name, count=10):
     if module is None:
         print(f"\nModule '{module_name}' is not loaded")
         return
-    
+        
     if hasattr(module, 'get_recent_logs') and callable(getattr(module, 'get_recent_logs')):
         logs = module.get_recent_logs(count)
         
@@ -204,12 +204,12 @@ def initialize_modules(args):
         
         log_message("Initialization complete")
         return True
-        
+                
     except Exception as e:
         log_message(f"Error initializing modules: {e}")
         log_message(traceback.format_exc())
         return False
-
+    
 def stop_modules():
     """Stop all running modules"""
     for name, module in modules.items():

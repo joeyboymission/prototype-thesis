@@ -177,13 +177,13 @@ class DispenserModule(ModuleBase):
         }
 
     def log_sensor_readings(self, data):
-        """Log current sensor readings in the required format"""
-        readings = []
-        for i in range(1, 5):
-            container = f"CONT{i}"
-            dist = data["data"][container]["distance_cm"]
-            vol = data["data"][container]["remaining_volume_ml"]
-            readings.append(f"{container}: {dist:.2f} cm {vol:.2f} ml")
+    """Log current sensor readings in the required format"""
+    readings = []
+    for i in range(1, 5):
+        container = f"CONT{i}"
+        dist = data["data"][container]["distance_cm"]
+        vol = data["data"][container]["remaining_volume_ml"]
+        readings.append(f"{container}: {dist:.2f} cm {vol:.2f} ml")
         self.log_message(" | ".join(readings))
 
     def log_message(self, message):
@@ -194,114 +194,114 @@ class DispenserModule(ModuleBase):
         self.log_queue.append(log_entry)
 
     def initialize_storage(self):
-        """Initialize storage system and check existing data"""
+    """Initialize storage system and check existing data"""
         self.log_message("Checking the connection to Database...")
     
-        # Create local data directory if it doesn't exist
+    # Create local data directory if it doesn't exist
         if not os.path.exists(self.DATA_DIR):
             self.log_message(f"Creating local data directory: {self.DATA_DIR}")
-            try:
+        try:
                 os.makedirs(self.DATA_DIR, exist_ok=True)
-            except Exception as e:
+        except Exception as e:
                 self.log_message(f"Error creating data directory: {e}")
-                return False
+            return False
     
-        # Check local file
+    # Check local file
         if os.path.exists(self.LOCAL_FILE):
-            try:
+        try:
                 with open(self.LOCAL_FILE, "r") as f:
-                    data = json.load(f)
-                    if data:
-                        latest = data[-1]
+                data = json.load(f)
+                if data:
+                    latest = data[-1]
                         self.reading_counter = latest["reading"]
                         self.log_message(f"Found {len(data)} existing records in local storage")
                         self.log_message(f"Latest reading number: {self.reading_counter}")
-            except Exception as e:
+        except Exception as e:
                 self.log_message(f"Error reading local data file: {e}")
-        else:
+    else:
             self.log_message("Local data file does not exist, will create when first data is saved")
     
-        return True
+    return True
 
     def connect_to_mongodb(self):
-        """Connect to MongoDB and restore latest state"""
+    """Connect to MongoDB and restore latest state"""
         global MONGODB_AVAILABLE
     
-        if not MONGODB_AVAILABLE:
+    if not MONGODB_AVAILABLE:
             self.log_message("MongoDB support not available, using local storage only.")
-            return False
+        return False
     
-        try:
+    try:
             self.log_message("Checking the connection to Database...")
             self.mongo_client = MongoClient(self.MONGO_URI, serverSelectionTimeoutMS=5000)
-            # Test connection
+        # Test connection
             self.mongo_client.admin.command('ping')
         
             self.mongo_db = self.mongo_client["Smart_Cubicle"]
             self.mongo_collection = self.mongo_db["dispenser_resource"]  # Using the correct collection name
         
-            # Check if collection exists and has data
+        # Check if collection exists and has data
             if self.mongo_collection.count_documents({}) > 0:
                 self.log_message("Found existing data in remote database")
                 latest_doc = self.mongo_collection.find_one(sort=[("timestamp", -1)])
-                if latest_doc:
+            if latest_doc:
                     self.reading_counter = latest_doc.get("reading", 0)
                     self.log_message(f"Latest remote reading number: {self.reading_counter}")
         
             self.log_message("Database Connected Successfully!")
-            return True
-        except Exception as e:
+        return True
+    except Exception as e:
             self.log_message(f"MongoDB connection error: {e}")
             self.mongo_client = None
             self.mongo_db = None
             self.mongo_collection = None
-            return False
+        return False
 
     def save_to_mongodb(self, data):
-        """Save data to MongoDB"""
+    """Save data to MongoDB"""
         if not MONGODB_AVAILABLE or self.mongo_collection is None:
-            return False
+        return False
     
-        try:
+    try:
             self.mongo_collection.insert_one(data)
-            return True
-        except Exception as e:
+        return True
+    except Exception as e:
             self.log_message(f"Error saving to MongoDB: {e}")
-            return False
+        return False
 
     def save_to_local_storage(self, data):
-        """Save data to local JSON file"""
-        try:
-            # Ensure the directory exists
+    """Save data to local JSON file"""
+    try:
+        # Ensure the directory exists
             os.makedirs(self.DATA_DIR, exist_ok=True)
         
-            existing_data = []
+        existing_data = []
             if os.path.exists(self.LOCAL_FILE):
-                try:
+            try:
                     with open(self.LOCAL_FILE, "r") as f:
-                        existing_data = json.load(f)
-                except json.JSONDecodeError:
+                    existing_data = json.load(f)
+            except json.JSONDecodeError:
                     self.log_message("Creating new data file (existing file corrupt)")
         
-            # Ensure data has the correct format
-            if not isinstance(existing_data, list):
-                existing_data = []
+        # Ensure data has the correct format
+        if not isinstance(existing_data, list):
+            existing_data = []
         
-            existing_data.append(data)
+        existing_data.append(data)
         
-            # Use atomic write to prevent corruption
+        # Use atomic write to prevent corruption
             temp_file = self.LOCAL_FILE + ".tmp"
-            with open(temp_file, "w") as f:
-                json.dump(existing_data, f, indent=2)
-                os.replace(temp_file, self.LOCAL_FILE)
+        with open(temp_file, "w") as f:
+            json.dump(existing_data, f, indent=2)
+            os.replace(temp_file, self.LOCAL_FILE)
         
-            return True
-        except Exception as e:
+        return True
+    except Exception as e:
             self.log_message(f"Local storage error: {e}")
-            return False
+        return False
 
     def save_dispenser_data(self, dispenser_data):
-        """Save dispenser data to both MongoDB and local storage"""
+    """Save dispenser data to both MongoDB and local storage"""
         mongodb_success = self.save_to_mongodb(dispenser_data)
         local_success = self.save_to_local_storage(dispenser_data)
         
@@ -313,32 +313,38 @@ class DispenserModule(ModuleBase):
         else:
             self.log_message("Status: FAILED TO SAVE DATA")
     
-        return mongodb_success or local_success
+    return mongodb_success or local_success
 
     def should_save_reading(self, current_reading):
-        """Determine if the current reading should be saved based on changes"""
+    """Determine if the current reading should be saved based on changes"""
         if not self.previous_readings:
-            return True
+        return True
     
-        # Minimum volume change threshold (in ml) to consider significant
-        MIN_VOLUME_CHANGE = 10.0  # Only save if volume changes by at least 10ml
+    # Minimum volume change threshold (in ml) to consider significant
+    MIN_VOLUME_CHANGE = 10.0  # Only save if volume changes by at least 10ml
     
-        for container in ["CONT1", "CONT2", "CONT3", "CONT4"]:
+    for container in ["CONT1", "CONT2", "CONT3", "CONT4"]:
             prev_vol = self.previous_readings["data"][container]["remaining_volume_ml"]
-            curr_vol = current_reading["data"][container]["remaining_volume_ml"]
+        curr_vol = current_reading["data"][container]["remaining_volume_ml"]
         
-            # Calculate absolute change in volume
-            volume_change = abs(prev_vol - curr_vol)
+        # Calculate absolute change in volume
+        volume_change = abs(prev_vol - curr_vol)
         
-            # Only save if the change is significant (more than MIN_VOLUME_CHANGE)
-            if volume_change >= MIN_VOLUME_CHANGE:
+        # Only save if the change is significant (more than MIN_VOLUME_CHANGE)
+        if volume_change >= MIN_VOLUME_CHANGE:
+            # Get the whole numbers
+            prev_whole = int(prev_vol)
+            curr_whole = int(curr_vol)
+            
+            # Only save if whole numbers are different
+            if prev_whole != curr_whole:
                 return True
-        
-        # If no significant changes were found, don't save
-        return False
+    
+    return False
 
     def setup_hardware(self):
         """Initialize GPIO for ultrasonic sensors"""
+        
         global LGPIO_AVAILABLE
         
         if not LGPIO_AVAILABLE:
@@ -349,41 +355,64 @@ class DispenserModule(ModuleBase):
             self.log_message("Initializing GPIO...")
             self.h = lgpio.gpiochip_open(self.GPIO_CHIP)
             
-            # Track successfully claimed pins
             self.claimed_pins = []
             self.active_sensors = []
             
-            # Setup ultrasonic sensor pins
+            # Try to claim each trigger and echo pin pair
             for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
+                trigger_claimed = False
+                echo_claimed = False
+                
                 try:
-                    # Attempt to claim trigger pin
+                    # Try to claim trigger pin
                     lgpio.gpio_claim_output(self.h, trigger)
                     self.claimed_pins.append(trigger)
-                    
-                    # Attempt to claim echo pin
+                    trigger_claimed = True
+                    self.log_message(f"Successfully claimed trigger pin GPIO{trigger}")
+                except Exception as e:
+                    self.log_message(f"Could not claim trigger pin GPIO{trigger}: {e}")
+                
+                try:
+                    # Try to claim echo pin
                     lgpio.gpio_claim_input(self.h, echo)
                     self.claimed_pins.append(echo)
-                    
-                    # If both pins were claimed successfully, mark sensor as active
-                    self.active_sensors.append((trigger, echo))
-                    self.log_message(f"Sensor {i+1} (CONT{i+1}) initialized successfully")
+                    echo_claimed = True
+                    self.log_message(f"Successfully claimed echo pin GPIO{echo}")
                 except Exception as e:
-                    self.log_message(f"Error setting up sensor {i+1} (CONT{i+1}): {e}")
-                    self.log_message(f"Sensor {i+1} will run in simulation mode")
+                    self.log_message(f"Could not claim echo pin GPIO{echo}: {e}")
+                
+                # Only add to active sensors if both pins were claimed
+                if trigger_claimed and echo_claimed:
+                    self.active_sensors.append((trigger, echo))
+                    self.log_message(f"Ultrasonic sensor {i+1} (CONT{i+1}) is active")
+                else:
+                    # If one pin was claimed but the other wasn't, release the claimed one
+                    if trigger_claimed and not echo_claimed:
+                        try:
+                            lgpio.gpio_free(self.h, trigger)
+                            self.claimed_pins.remove(trigger)
+                            self.log_message(f"Released GPIO{trigger} because echo pin could not be claimed")
+                        except:
+                            pass
+                    elif echo_claimed and not trigger_claimed:
+                        try:
+                            lgpio.gpio_free(self.h, echo)
+                            self.claimed_pins.remove(echo)
+                            self.log_message(f"Released GPIO{echo} because trigger pin could not be claimed")
+                        except:
+                            pass
             
-            # Log success or partial success
-            if len(self.active_sensors) == 4:
-                self.log_message("All ultrasonic sensors initialized successfully")
-            elif len(self.active_sensors) > 0:
-                self.log_message(f"{len(self.active_sensors)} of 4 sensors initialized, others in simulation mode")
+            # Check if we were able to claim at least some sensor pairs
+            if self.active_sensors:
+                self.log_message(f"GPIO initialized with {len(self.active_sensors)} active ultrasonic sensors")
+                return True
             else:
-                self.log_message("No sensors could be initialized, running in full simulation mode")
-            
-            # We'll still return True so the module runs in simulation mode for any sensors that couldn't be claimed
-            return True
-        except Exception as e:
+                self.log_message("Failed to claim any ultrasonic sensor pairs")
+                # We'll still return True so the module runs in simulation mode for all sensors
+        return True
+    except Exception as e:
             self.log_message(f"Error initializing GPIO: {e}")
-            return False
+        return False
 
     def cleanup_hardware(self):
         """Clean up GPIO resources"""
@@ -410,95 +439,81 @@ class DispenserModule(ModuleBase):
             self.log_message("GPIO resources cleaned up")
 
     def measure_distance(self, trigger, echo, num_measurements=5):
-        """Measure distance using ultrasonic sensor with multiple readings for accuracy"""
+    """Measure distance using ultrasonic sensor with multiple readings for accuracy"""
         if not LGPIO_AVAILABLE:
             # Return simulated distance between 5-15cm
             import random
             return random.uniform(5.0, 15.0)
         
-        # Check if this sensor's pins were successfully claimed
-        if trigger not in self.claimed_pins or echo not in self.claimed_pins:
-            # Return simulated distance for unclaimed sensors
+        # Check if this sensor pair is in the list of active sensors
+        if not (trigger, echo) in self.active_sensors:
+            # Use simulation for sensors that weren't successfully claimed
             import random
             return random.uniform(5.0, 15.0)
         
-        distances = []
+    distances = []
     
-        for _ in range(num_measurements):
+    for _ in range(num_measurements):
             try:
                 lgpio.gpio_write(self.h, trigger, 1)  # Trigger high
-                time.sleep(0.00001)              # 10us pulse
+        time.sleep(0.00001)              # 10us pulse
                 lgpio.gpio_write(self.h, trigger, 0)  # Trigger low
         
-                # Wait for echo to go high
-                start_time = time.time()
+        # Wait for echo to go high
+        start_time = time.time()
                 while lgpio.gpio_read(self.h, echo) == 0:
-                    pulse_start = time.time()
-                    if pulse_start - start_time > 0.5:  # Timeout after 0.5s
-                        return None
+            pulse_start = time.time()
+            if pulse_start - start_time > 0.5:  # Timeout after 0.5s
+                return None
         
-                # Wait for echo to go low
-                start_time = time.time()
+        # Wait for echo to go low
+        start_time = time.time()
                 while lgpio.gpio_read(self.h, echo) == 1:
-                    pulse_end = time.time()
-                    if pulse_end - start_time > 0.5:  # Timeout after 0.5s
-                        return None
+            pulse_end = time.time()
+            if pulse_end - start_time > 0.5:  # Timeout after 0.5s
+                return None
         
-                # Calculate distance
-                pulse_duration = pulse_end - pulse_start
-                distance = pulse_duration * 17150  # Speed of sound: 343 m/s -> 17150 cm/s
-                distances.append(round(distance, 2))
+        # Calculate distance
+        pulse_duration = pulse_end - pulse_start
+        distance = pulse_duration * 17150  # Speed of sound: 343 m/s -> 17150 cm/s
+        distances.append(round(distance, 2))
         
-                time.sleep(0.05)  # Short delay between measurements
+        time.sleep(0.05)  # Short delay between measurements
             except Exception as e:
                 self.log_message(f"Error measuring distance: {e}")
                 return None
     
-        # Remove outliers and average
-        if distances:
-            if len(distances) > 2:
-                # Remove min and max values
-                distances.remove(min(distances))
-                distances.remove(max(distances))
-            
-            # Calculate average
-            avg_distance = sum(distances) / len(distances)
-            return round(avg_distance, 2)
-        else:
-            return None
+    # Remove outliers and average
+    if distances:
+        if len(distances) > 2:
+            # Remove min and max values
+            distances.remove(min(distances))
+            distances.remove(max(distances))
+        
+        # Average the remaining values
+        return sum(distances) / len(distances)
+    
+    return None
 
     def calculate_volume(self, container, distance):
-        """Calculate remaining volume based on distance measurement"""
-        if distance is None:
-            return None
+    """Calculate remaining volume based on distance measurement"""
+    if distance is None:
+        return None
         
-        # Get calibration data for this container
-        calibration = self.CALIBRATION_DATA.get(container)
-        if not calibration:
-            self.log_message(f"Error: No calibration data for {container}")
-            return None
-        
-        # Extract calibration values
-        full_dist = calibration["full"]
-        empty_dist = calibration["empty"]
-        
-        # Calculate volume percentage (0-100%)
-        if distance <= full_dist:
-            # Distance shorter than "full" calibration, assume 100%
-            volume_percent = 100.0
-        elif distance >= empty_dist:
-            # Distance longer than "empty" calibration, assume 0%
-            volume_percent = 0.0
-        else:
-            # Calculate volume percentage from distance (inverted relationship)
-            total_dist_range = empty_dist - full_dist
-            current_dist_from_full = distance - full_dist
-            volume_percent = 100.0 - (current_dist_from_full / total_dist_range * 100.0)
-        
-        # Convert percentage to volume in ml (assuming 1000ml max capacity)
-        volume_ml = volume_percent * 10.0
-        
-        return round(volume_ml, 2)
+        full_distance = self.CALIBRATION_DATA[container]["full"]
+        empty_distance = self.CALIBRATION_DATA[container]["empty"]
+    
+    if distance <= full_distance:
+        return 425.0  # Full container (ml)
+    elif distance >= empty_distance:
+        return 0.0    # Empty container (ml)
+    else:
+        # Linear interpolation between full and empty
+        total_distance_range = empty_distance - full_distance
+        distance_from_full = distance - full_distance
+        volume_fraction = 1 - (distance_from_full / total_distance_range)
+        volume = 425.0 * volume_fraction
+        return round(volume, 2)
 
     def perform_post_check(self):
         """Perform Power-On Self Test to verify all components are working"""
@@ -585,55 +600,82 @@ class DispenserModule(ModuleBase):
         return list(self.log_queue)[-count:]
 
     def run(self):
-        """Main function to monitor dispenser levels"""
-        # Initialize storage system
-        if not self.initialize_storage():
-            self.log_message("Failed to initialize storage system")
+        """Main function to monitor dispenser containers"""
+        if not self.setup_hardware():
+            self.log_message("Failed to initialize dispenser hardware. Module not started.")
             self.running = False
             return
         
-        # Connect to MongoDB
+        # Perform system check
+        self.perform_post_check()
+        
+        # Connect to MongoDB first
         mongodb_connected = self.connect_to_mongodb()
         if not mongodb_connected:
             self.log_message("No MongoDB connection. Using local storage only.")
         
-        # Initialize hardware
-        hardware_initialized = self.setup_hardware()
-        if not hardware_initialized:
-            self.log_message("Failed to initialize hardware")
-            self.running = False
+        # Initialize storage system
+        if not self.initialize_storage():
+            self.log_message("Failed to initialize storage system")
             return
         
-        self.log_message("Dispenser monitoring started")
+        self.log_message("Detecting the initial volume for each container...")
         
-        # Register signal handler
-        def signal_handler(signum, frame):
-            self.log_message("Received stop signal, cleaning up...")
-            self.running = False
-            self.stop_event.set()
+        # Initial readings
+        initial_readings = []
+        readings_data = {
+            "reading": self.reading_counter + 1,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data": {}
+        }
         
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        # Check if we have active sensors or need to use simulation mode for all
+        using_simulation = len(self.active_sensors) == 0
+        if using_simulation:
+            self.log_message("No active ultrasonic sensors. Using simulation mode for all containers.")
         
-        # Initial reading
         for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
             container = f"CONT{i+1}"
+            
+            # Get the distance measurement (real or simulated)
             distance = self.measure_distance(trigger, echo)
             volume = self.calculate_volume(container, distance)
             
-            if volume is not None:
-                self.container_data[container]["distance_cm"] = distance
-                self.container_data[container]["remaining_volume_ml"] = volume
+            # Update container data
+            self.container_data[container]["distance_cm"] = distance if distance is not None else 0
+            self.container_data[container]["remaining_volume_ml"] = volume if volume is not None else 0
+            self.container_data[container]["previous_volume_ml"] = volume if volume is not None else 0
+            
+            # Set sensor state based on whether we're using the actual sensor or simulation
+            if (trigger, echo) in self.active_sensors:
+                self.container_data[container]["sensor_state"] = "UP"
+            else:
+                # If we don't have this active sensor, mark it as simulated
+                self.container_data[container]["sensor_state"] = "SIMULATED"
+            
+            # Store data for saving
+            readings_data["data"][container] = {
+                "distance_cm": distance if distance is not None else 0,
+                "previous_volume_ml": volume if volume is not None else 0,
+                "remaining_volume_ml": volume if volume is not None else 0
+            }
+            
+            # Add to display
+            if distance is not None and volume is not None:
+                sensor_state = "(SIMULATED)" if (trigger, echo) not in self.active_sensors else ""
+                initial_readings.append(f"{container}: {distance:.2f} cm {volume:.2f} ml {sensor_state}")
+            else:
+                initial_readings.append(f"{container}: ERROR")
         
-        # Save initial reading
-        initial_data = self.get_data_template()
-        for i in range(1, 5):
-            container = f"CONT{i}"
-            initial_data["data"][container]["distance_cm"] = self.container_data[container]["distance_cm"]
-            initial_data["data"][container]["remaining_volume_ml"] = self.container_data[container]["remaining_volume_ml"]
+        # Display initial readings
+        self.log_message(" | ".join(initial_readings))
         
-        self.save_dispenser_data(initial_data)
-        self.previous_readings = initial_data
+        # Save initial readings
+        self.save_dispenser_data(readings_data)
+        self.previous_readings = readings_data
+        self.reading_counter += 1
+        
+        self.log_message("Dispenser monitoring ready")
         
         # Main monitoring loop
         last_reading_time = time.time()
@@ -645,32 +687,44 @@ class DispenserModule(ModuleBase):
                     
                     # Check if it's time for a new reading
                     if current_time - last_reading_time >= self.READING_INTERVAL:
-                        self.log_message("Checking dispenser levels...")
-                        
-                        # Reset to be re-populated with new readings
-                        current_data = self.get_data_template()
                         readings = []
+                        current_data = {
+                            "reading": self.reading_counter + 1,
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "data": {}
+                        }
                         
                         for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
-                            container = f"CONT{i+1}"
+                container = f"CONT{i+1}"
                             distance = self.measure_distance(trigger, echo)
                             volume = self.calculate_volume(container, distance)
                             
                             prev_volume = self.container_data[container]["remaining_volume_ml"]
                             
-                            if volume is not None:
-                                # Update container data
-                                self.container_data[container]["distance_cm"] = distance
-                                self.container_data[container]["previous_volume_ml"] = prev_volume
-                                self.container_data[container]["remaining_volume_ml"] = volume
-                                
-                                # Add to current data
-                                current_data["data"][container]["distance_cm"] = distance
-                                current_data["data"][container]["previous_volume_ml"] = prev_volume
-                                current_data["data"][container]["remaining_volume_ml"] = volume
-                                
-                                # Create readable format for log
+                            # Update container data
+                            self.container_data[container]["distance_cm"] = distance if distance is not None else 0
+                            self.container_data[container]["previous_volume_ml"] = prev_volume
+                            self.container_data[container]["remaining_volume_ml"] = volume if volume is not None else 0
+                            self.container_data[container]["sensor_state"] = "UP" if distance is not None else "DOWN"
+                            self.container_data[container]["last_reading"] = current_time
+                            
+                            # Calculate volume change if sensor is working
+                            if volume is not None and prev_volume is not None and prev_volume > volume:
+                                volume_change = prev_volume - volume
+                                self.container_data[container]["last_volume_change"] = round(volume_change, 2)
+                            
+                            # Store data for saving
+                            current_data["data"][container] = {
+                                "distance_cm": distance if distance is not None else 0,
+                                "previous_volume_ml": prev_volume,
+                                "remaining_volume_ml": volume if volume is not None else 0
+                            }
+                            
+                            # Format for display
+                            if distance is not None and volume is not None:
                                 readings.append(f"{container}: {distance:.2f} cm {volume:.2f} ml")
+                            else:
+                                readings.append(f"{container}: ERROR")
                         
                         # Display current readings
                         self.log_message(" | ".join(readings))
@@ -680,7 +734,7 @@ class DispenserModule(ModuleBase):
                             self.save_dispenser_data(current_data)
                             self.reading_counter += 1
                         
-                        # Update previous reading
+                        # Update previous readings
                         self.previous_readings = current_data
                         
                         last_reading_time = current_time
@@ -689,26 +743,33 @@ class DispenserModule(ModuleBase):
                     self.log_message(f"Error in dispenser module: {e}")
                 
                 time.sleep(1)  # Check every second
-            else:
+                else:
                 time.sleep(1)  # Check for un-pause every second
         
         # Save final reading regardless of changes
         self.log_message("Saving final reading before exit...")
         
-        # Perform one last reading
-        final_data = self.get_data_template()
-        for i in range(1, 5):
-            container = f"CONT{i}"
-            final_data["data"][container]["distance_cm"] = self.container_data[container]["distance_cm"]
-            final_data["data"][container]["previous_volume_ml"] = self.container_data[container]["previous_volume_ml"]
-            final_data["data"][container]["remaining_volume_ml"] = self.container_data[container]["remaining_volume_ml"]
+        # Create final reading data
+        final_data = {
+            "reading": self.reading_counter + 1,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data": {}
+        }
+        
+        for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
+            container = f"CONT{i+1}"
+            distance = self.measure_distance(trigger, echo)
+            volume = self.calculate_volume(container, distance)
+            prev_volume = self.container_data[container]["remaining_volume_ml"]
+            
+            final_data["data"][container] = {
+                "distance_cm": distance if distance is not None else 0,
+                "previous_volume_ml": prev_volume,
+                "remaining_volume_ml": volume if volume is not None else 0
+            }
         
         self.save_dispenser_data(final_data)
-        self.reading_counter += 1
-        
-        # Clean up hardware
         self.cleanup_hardware()
-        self.log_message("Dispenser module shut down gracefully")
 
 
 # If run directly (for testing)

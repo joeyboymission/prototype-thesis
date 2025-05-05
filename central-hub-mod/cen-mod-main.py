@@ -11,8 +11,10 @@ import lgpio
 import datetime
 from collections import deque
 
-# Constants for DC exhaust fan
+# Constants for relays
 K1_PIN = 20  # GPIO20, Pin 38 for 8RELAY-B K1 (DC Fan)
+K2_PIN = 23  # GPIO23, Pin 16 for 8RELAY-B K2 (Exhaust Fan)
+K3_PIN = 24  # GPIO24, Pin 18 for 8RELAY-B K3 (Air Freshener)
 TEMP_CHECK_INTERVAL = 5  # Seconds between temperature checks
 
 # CPU Temperature thresholds (in Celsius)

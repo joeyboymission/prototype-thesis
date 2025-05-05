@@ -60,14 +60,14 @@ MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongod
 LOGGING_INTERVAL = 120  # Changed from 10 to 120 seconds (2 minutes) to reduce database writes
 DECIMAL_PRECISION = 2  # For temperature and humidity values
 
-# GPIO settings for exhaust fan and air freshener
+# GPIO settings from pin-config.md
 GPIO_CHIP = 0
-FAN_RELAY_PIN = 23  # GPIO23, Pin 16, 8RELAY-B K2 for exhaust fan
-FRESHENER_RELAY_PIN = 24  # Changed from 22 to 24 to avoid conflict with DHT sensor on GPIO12 (Pin 32)
+FAN_RELAY_PIN = 23  # 8RELAY-B K2 (Exhaust Fan): GPIO23 (Pin 16)
+FRESHENER_RELAY_PIN = 24  # 8RELAY-B K3 (Air Freshener): GPIO24 (Pin 18)
 FAN_POST_EXIT_DURATION = 10  # 10 seconds delay after visitor exits
 
-# DHT22 sensor pins (match dht22-test.py)
-DHT_PINS = [4, 5, 6, 12]  # GPIO numbers
+# DHT22 sensor pins from pin-config.md
+DHT_PINS = [4, 5, 6, 12]  # TEMP1, TEMP2, TEMP3, TEMP4
 
 # Global variables
 arduino_serial = None
@@ -209,11 +209,11 @@ class OccupancyMonitor:
                 if not self.is_occupied:
                     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Simulated occupancy: now OCCUPIED")
                     self.is_occupied = True
-            else:
-                if self.is_occupied:
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Simulated occupancy: now VACANT")
-                    self.is_occupied = False
-                    self.last_exit_time = current_time
+                else:
+                    if self.is_occupied:
+                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Simulated occupancy: now VACANT")
+                        self.is_occupied = False
+                        self.last_exit_time = current_time
             return self.is_occupied
             
         try:
@@ -273,10 +273,16 @@ class OdorModule(ModuleBase):
         super().__init__("Odor")
         # Configuration
         self.GPIO_CHIP = 0
-        self.MQ2_PIN = 26          # Analog input pin for MQ2 gas sensor
-        self.FAN_PIN = 13          # GPIO pin for fan control
-        self.READING_INTERVAL = 5  # Seconds between readings
-        self.FAN_THRESHOLD = 200   # Threshold for fan activation
+        
+        # Use DHT pins from pin-config.md
+        self.DHT_PINS = [4, 5, 6, 12]  # TEMP1, TEMP2, TEMP3, TEMP4
+        
+        # Use relay pins from pin-config.md
+        self.FAN_RELAY_PIN = 23        # 8RELAY-B K2 (Exhaust Fan): GPIO23 (Pin 16)
+        self.FRESHENER_RELAY_PIN = 24  # 8RELAY-B K3 (Air Freshener): GPIO24 (Pin 18)
+        
+        self.READING_INTERVAL = 5      # Seconds between readings
+        self.FAN_THRESHOLD = 200       # Threshold for fan activation
         self.FAN_POST_EXIT_DURATION = 10  # Seconds to leave fan on after exit
         
         # MongoDB settings
@@ -369,20 +375,20 @@ class OdorModule(ModuleBase):
     def connect_to_mongodb(self):
         """Connect to MongoDB and restore latest state"""
         global MONGODB_AVAILABLE
-        
+    
         if not MONGODB_AVAILABLE:
             self.log_message("MongoDB support not available, using local storage only.")
             return False
-        
+    
         try:
             self.log_message("Checking the connection to Database...")
             self.mongo_client = MongoClient(self.MONGO_URI, serverSelectionTimeoutMS=5000)
             # Test connection
             self.mongo_client.admin.command('ping')
-            
+        
             self.mongo_db = self.mongo_client["Smart_Cubicle"]
             self.mongo_collection = self.mongo_db["odor_resource"]  # Using the correct collection name
-            
+        
             # Check if collection exists and has data
             if self.mongo_collection.count_documents({}) > 0:
                 self.log_message("Found existing data in remote database")
@@ -390,7 +396,7 @@ class OdorModule(ModuleBase):
                 if latest_doc:
                     self.reading_counter = latest_doc.get("reading", 0)
                     self.log_message(f"Latest remote reading number: {self.reading_counter}")
-            
+        
             self.log_message("Database Connected Successfully!")
             return True
         except Exception as e:
@@ -417,7 +423,7 @@ class OdorModule(ModuleBase):
         try:
             # Ensure the directory exists
             os.makedirs(self.DATA_DIR, exist_ok=True)
-            
+        
             existing_data = []
             if os.path.exists(self.LOCAL_FILE):
                 try:
@@ -425,19 +431,19 @@ class OdorModule(ModuleBase):
                         existing_data = json.load(f)
                 except json.JSONDecodeError:
                     self.log_message("Creating new data file (existing file corrupt)")
-            
+        
             # Ensure data has the correct format
             if not isinstance(existing_data, list):
                 existing_data = []
-            
+        
             existing_data.append(data)
-            
+        
             # Use atomic write to prevent corruption
             temp_file = self.LOCAL_FILE + ".tmp"
             with open(temp_file, "w") as f:
                 json.dump(existing_data, f, indent=2)
             os.replace(temp_file, self.LOCAL_FILE)
-            
+        
             return True
         except Exception as e:
             self.log_message(f"Local storage error: {e}")
@@ -504,8 +510,12 @@ class OdorModule(ModuleBase):
             # For MQ2, we would normally set up ADC here, but we're simulating readings
             
             # Setup fan pin as output
-            lgpio.gpio_claim_output(self.h, self.FAN_PIN)
-            lgpio.gpio_write(self.h, self.FAN_PIN, 0)  # Initialize fan to OFF
+            lgpio.gpio_claim_output(self.h, self.FAN_RELAY_PIN)
+            lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 0)  # Initialize fan to OFF
+            
+            # Setup air freshener pin as output
+            lgpio.gpio_claim_output(self.h, self.FRESHENER_RELAY_PIN)
+            lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 1)  # Initialize freshener to OFF (HIGH for active-low)
                 
             self.log_message("GPIO initialized successfully")
             return True
@@ -521,8 +531,8 @@ class OdorModule(ModuleBase):
         if self.h is not None:
             try:
                 # Turn off fan
-                lgpio.gpio_write(self.h, self.FAN_PIN, 0)
-                lgpio.gpio_free(self.h, self.FAN_PIN)
+                lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 0)
+                lgpio.gpio_free(self.h, self.FAN_RELAY_PIN)
             except:
                 pass
             try:
@@ -541,13 +551,14 @@ class OdorModule(ModuleBase):
         
         if self.h is not None:
             try:
-                lgpio.gpio_write(self.h, self.FAN_PIN, state)
+                lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, state)
                 self.sensor_data["fan_state"] = "ON" if state else "OFF"
                 return True
             except Exception as e:
                 self.log_message(f"Error setting fan state: {e}")
+                return False
         return False
-
+    
     def read_mq2_sensor(self):
         """Read MQ2 sensor value (simulated for now)"""
         try:
@@ -595,7 +606,7 @@ class OdorModule(ModuleBase):
         else:
             self.log_message("✗ GPIO initialization failed")
             return False
-        
+
         # Check the MQ2 sensor
         sensor_value = self.read_mq2_sensor()
         self.log_message(f"MQ2 sensor reading: {sensor_value}")
@@ -665,11 +676,11 @@ class OdorModule(ModuleBase):
         # Check if space is occupied
         is_occupied = self.occupancy_monitor.is_space_occupied()
         self.sensor_data["occupancy"] = "OCCUPIED" if is_occupied else "VACANT"
-        
+    
         current_time = time.time()
         current_fan_state = self.sensor_data["fan_state"] == "ON"
         last_exit_time = self.occupancy_monitor.get_last_exit_time()
-        
+    
         # Fan control logic
         if is_occupied:
             # Turn on fan when occupied
@@ -697,12 +708,12 @@ class OdorModule(ModuleBase):
         mongodb_connected = self.connect_to_mongodb()
         if not mongodb_connected:
             self.log_message("No MongoDB connection. Using local storage only.")
-        
-        # Initialize storage system
+    
+    # Initialize storage system
         if not self.initialize_storage():
             self.log_message("Failed to initialize storage system")
-            return
-        
+        return
+    
         self.log_message("Detecting the initial air quality...")
         
         # Initial reading
@@ -750,7 +761,7 @@ class OdorModule(ModuleBase):
                     if current_time - last_device_update_time >= 1:
                         self.update_devices()
                         last_device_update_time = current_time
-                    
+        
                     # Check if it's time for a new reading
                     if current_time - last_reading_time >= self.READING_INTERVAL:
                         # Read sensor
