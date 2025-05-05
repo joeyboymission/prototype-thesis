@@ -4,7 +4,7 @@ import os
 import sys
 import time
 import signal
-import datetime
+from datetime import datetime
 import json
 import threading
 from collections import deque
@@ -13,17 +13,27 @@ import argparse
 import traceback
 import psutil
 from tabulate import tabulate
+import platform
+
+# Check if we're running on Raspberry Pi
+is_raspberry_pi = platform.machine().startswith('arm') or platform.machine().startswith('aarch')
+print(f"Detected platform: {platform.machine()} - {'Raspberry Pi' if is_raspberry_pi else 'Non-Raspberry Pi'}")
 
 # Set up path to modules
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+sys.path.append(os.path.join(current_dir, "disp-mod-main"))
+sys.path.append(os.path.join(current_dir, "occupancy-mod-main"))
+sys.path.append(os.path.join(current_dir, "odor-mod-main"))
+sys.path.append(os.path.join(current_dir, "central-hub-mod"))
 
 # Import module files
 try:
     # Import the modules from their respective files
-    from disp_mod_main.disp_mod_main import DispenserModule
-    from occupancy_mod_main.occu_mod_main import OccupancyModule
-    from odor_mod_main.odor_mod_main import OdorModule
-    from central_hub_mod.cen_mod_main import CentralHubModule
+    from disp_mod_main import DispenserModule
+    from occu_mod_main import OccupancyModule
+    from odor_mod_main import OdorModule
+    from cen_mod_main import CentralHubModule
 except ImportError as e:
     print(f"Error importing modules: {e}")
     print("Please check that the module files are in the correct directories and properly named.")
@@ -79,7 +89,7 @@ modules = {
 
 def get_timestamp():
     """Return current timestamp string"""
-    return datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+    return datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
 
 def log_message(message):
     """Print a log message with timestamp"""
@@ -114,7 +124,6 @@ def display_system_info():
     
     # Show hostname and platform info if available
     try:
-        import platform
         print(f"Host: {platform.node()}")
         print(f"Platform: {platform.platform()}")
     except:

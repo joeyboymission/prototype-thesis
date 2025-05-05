@@ -4,11 +4,22 @@ import json
 import os
 import signal
 import sys
-import datetime
-import lgpio
+from datetime import datetime
 from collections import deque
 import threading
 from bson import ObjectId
+import platform
+
+# Check if we're running on Raspberry Pi for hardware-specific imports
+is_raspberry_pi = platform.machine().startswith('arm') or platform.machine().startswith('aarch')
+
+# Try to import hardware-specific libraries
+try:
+    import lgpio
+    LGPIO_AVAILABLE = True
+except ImportError:
+    LGPIO_AVAILABLE = False
+    print("Warning: lgpio not available. Hardware features will be simulated.")
 
 # Try to import MongoDB libraries
 try:
@@ -325,6 +336,12 @@ class OccupancyModule(ModuleBase):
 
     def setup_hardware(self):
         """Initialize GPIO for PIR sensors and LEDs"""
+        global LGPIO_AVAILABLE
+        
+        if not LGPIO_AVAILABLE:
+            self.log_message("Running in simulation mode (lgpio not available)")
+            return True
+        
         try:
             self.log_message("Initializing GPIO...")
             self.h = lgpio.gpiochip_open(self.GPIO_CHIP)
@@ -346,6 +363,9 @@ class OccupancyModule(ModuleBase):
 
     def cleanup_hardware(self):
         """Clean up GPIO resources"""
+        if not LGPIO_AVAILABLE:
+            return
+        
         if self.h is not None:
             for pin in self.PIR_PINS + self.LED_PINS:
                 try:
@@ -363,6 +383,9 @@ class OccupancyModule(ModuleBase):
 
     def set_led_state(self, led_index, state):
         """Set LED state (0=OFF, 1=ON)"""
+        if not LGPIO_AVAILABLE:
+            return True
+        
         if self.h is not None and 0 <= led_index < len(self.LED_PINS):
             try:
                 led_pin = self.LED_PINS[led_index]
@@ -374,6 +397,11 @@ class OccupancyModule(ModuleBase):
 
     def read_pir_sensor(self, pir_index):
         """Read PIR sensor state (0=No motion, 1=Motion detected)"""
+        if not LGPIO_AVAILABLE:
+            # Simulate random occupancy states (20% chance of occupancy)
+            import random
+            return 1 if random.random() < 0.2 else 0
+        
         if self.h is not None and 0 <= pir_index < len(self.PIR_PINS):
             try:
                 pir_pin = self.PIR_PINS[pir_index]

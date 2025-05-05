@@ -1,20 +1,37 @@
 #!/usr/bin/env python3
 import os
 import subprocess
-import serial
 import time
 import json
-import datetime
+from datetime import datetime
 import glob
 import random
 import signal
 import sys
 import statistics
-import lgpio
 import importlib.util
 import threading
 from bson import ObjectId
 from collections import deque
+import platform
+
+# Check if we're running on Raspberry Pi for hardware-specific imports
+is_raspberry_pi = platform.machine().startswith('arm') or platform.machine().startswith('aarch')
+
+# Try to import hardware-specific libraries
+try:
+    import serial
+    SERIAL_AVAILABLE = True
+except ImportError:
+    SERIAL_AVAILABLE = False
+    print("Warning: serial module not available. Arduino communication will be simulated.")
+
+try:
+    import lgpio
+    LGPIO_AVAILABLE = True
+except ImportError:
+    LGPIO_AVAILABLE = False
+    print("Warning: lgpio not available. Hardware features will be simulated.")
 
 # Try to import MongoDB
 try:
@@ -74,11 +91,11 @@ last_exit_time = time.time()
 
 # Import occu-mod-main.py to access occupancy data
 try:
-    spec = importlib.util.spec_from_file_location("occupancy_module", "../occupancy-mod-main/occu-mod-main.py")
-    occupancy_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(occupancy_module)
-    OCCUPANCY_MODULE_AVAILABLE = True
-    print("Occupancy module imported successfully.")
+    # Don't try to import from a different directory path
+    # This was causing errors with the path: "../occupancy-mod-main/occu-mod-main.py"
+    # The main CLI script will handle module coordination instead
+    OCCUPANCY_MODULE_AVAILABLE = False
+    print("Occupancy module integration skipped - will be handled by main CLI.")
 except Exception as e:
     OCCUPANCY_MODULE_AVAILABLE = False
     print(f"Warning: Could not import occupancy module: {e}. Using local occupancy detection.")
@@ -357,6 +374,12 @@ class OdorModule(ModuleBase):
 
     def setup_hardware(self):
         """Initialize GPIO for MQ2 sensor and fan control"""
+        global LGPIO_AVAILABLE
+        
+        if not LGPIO_AVAILABLE:
+            self.log_message("Running in simulation mode (lgpio not available)")
+            return True
+        
         try:
             self.log_message("Initializing GPIO...")
             self.h = lgpio.gpiochip_open(self.GPIO_CHIP)
@@ -375,6 +398,9 @@ class OdorModule(ModuleBase):
 
     def cleanup_hardware(self):
         """Clean up GPIO resources"""
+        if not LGPIO_AVAILABLE:
+            return
+        
         if self.h is not None:
             try:
                 # Turn off fan
@@ -391,6 +417,11 @@ class OdorModule(ModuleBase):
 
     def set_fan_state(self, state):
         """Set fan state (0=OFF, 1=ON)"""
+        if not LGPIO_AVAILABLE:
+            # Just update the state in memory
+            self.sensor_data["fan_state"] = "ON" if state else "OFF"
+            return True
+        
         if self.h is not None:
             try:
                 lgpio.gpio_write(self.h, self.FAN_PIN, state)

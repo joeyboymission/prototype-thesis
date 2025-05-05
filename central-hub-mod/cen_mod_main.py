@@ -7,9 +7,21 @@ import json
 import threading
 import signal
 import psutil
-import lgpio
-import datetime
+from datetime import datetime
 from collections import deque
+import platform
+from bson import ObjectId
+
+# Check if we're running on Raspberry Pi for hardware-specific imports
+is_raspberry_pi = platform.machine().startswith('arm') or platform.machine().startswith('aarch')
+
+# Try to import hardware-specific libraries
+try:
+    import lgpio
+    LGPIO_AVAILABLE = True
+except ImportError:
+    LGPIO_AVAILABLE = False
+    print("Warning: lgpio not available. Hardware features will be simulated.")
 
 # Try to import MongoDB libraries, but have a fallback if not available
 try:
