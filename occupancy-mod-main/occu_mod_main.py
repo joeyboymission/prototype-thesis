@@ -124,8 +124,14 @@ class OccupancyModule(ModuleBase):
         super().__init__("Occupancy")
         # Configuration
         self.GPIO_CHIP = 0
-        self.PIR_PINS = [17, 22, 27]  # GPIO pins for PIR sensors
-        self.LED_PINS = [5, 6, 13]    # GPIO pins for LEDs  
+        
+        # Use GPIO pins that are less likely to conflict with dispenser module
+        # Changed from original [17, 22, 27] to use higher-numbered pins
+        self.PIR_PINS = [19, 25, 26]  # Alternative GPIO pins for PIR sensors 
+        
+        # Changed from original [5, 6, 13] to use higher-numbered pins
+        self.LED_PINS = [16, 20, 21]  # Alternative GPIO pins for LEDs  
+        
         self.READING_INTERVAL = 1     # Seconds between readings
         
         # MongoDB settings
@@ -155,6 +161,7 @@ class OccupancyModule(ModuleBase):
         self.mongo_collection = None   # MongoDB collection
         self.reading_counter = 0       # Reading counter
         self.log_queue = deque(maxlen=20)  # Keep last 20 log messages
+        self.claimed_pins = []         # List of successfully claimed GPIO pins
         
         # If we're on Windows, adjust the paths
         if os.name == 'nt':
@@ -342,21 +349,40 @@ class OccupancyModule(ModuleBase):
             self.log_message("Running in simulation mode (lgpio not available)")
             return True
         
+        # Use a try-except block to handle potential GPIO conflicts
         try:
             self.log_message("Initializing GPIO...")
             self.h = lgpio.gpiochip_open(self.GPIO_CHIP)
             
-            # Setup PIR pins as input
+            # Store pins that were successfully claimed
+            self.claimed_pins = []
+            
+            # Try to claim each PIR pin, skipping any that are already in use
             for pir in self.PIR_PINS:
-                lgpio.gpio_claim_input(self.h, pir)
-                
-            # Setup LED pins as output
+                try:
+                    lgpio.gpio_claim_input(self.h, pir)
+                    self.claimed_pins.append(pir)
+                    self.log_message(f"Successfully claimed PIR sensor on GPIO{pir}")
+                except Exception as e:
+                    self.log_message(f"Could not claim PIR sensor on GPIO{pir}: {e}")
+            
+            # Try to claim each LED pin, skipping any that are already in use
             for led in self.LED_PINS:
-                lgpio.gpio_claim_output(self.h, led)
-                lgpio.gpio_write(self.h, led, 0)  # Initialize LEDs to OFF
-                
-            self.log_message("GPIO initialized successfully")
-            return True
+                try:
+                    lgpio.gpio_claim_output(self.h, led)
+                    lgpio.gpio_write(self.h, led, 0)  # Initialize LEDs to OFF
+                    self.claimed_pins.append(led)
+                    self.log_message(f"Successfully claimed LED on GPIO{led}")
+                except Exception as e:
+                    self.log_message(f"Could not claim LED on GPIO{led}: {e}")
+            
+            # Check if we were able to claim at least some pins
+            if self.claimed_pins:
+                self.log_message(f"GPIO initialized with {len(self.claimed_pins)} pins")
+                return True
+            else:
+                self.log_message("Failed to claim any GPIO pins")
+                return False
         except Exception as e:
             self.log_message(f"Error initializing GPIO: {e}")
             return False
@@ -367,18 +393,23 @@ class OccupancyModule(ModuleBase):
             return
         
         if self.h is not None:
-            for pin in self.PIR_PINS + self.LED_PINS:
+            # Only clean up pins that were successfully claimed
+            for pin in self.claimed_pins:
                 try:
                     if pin in self.LED_PINS:
                         lgpio.gpio_write(self.h, pin, 0)  # Turn off LEDs
                     lgpio.gpio_free(self.h, pin)
+                    self.log_message(f"Released GPIO{pin}")
                 except:
                     pass
+                
             try:
                 lgpio.gpiochip_close(self.h)
             except:
                 pass
+            
             self.h = None
+            self.claimed_pins = []
             self.log_message("GPIO resources cleaned up")
 
     def set_led_state(self, led_index, state):
@@ -386,13 +417,20 @@ class OccupancyModule(ModuleBase):
         if not LGPIO_AVAILABLE:
             return True
         
-        if self.h is not None and 0 <= led_index < len(self.LED_PINS):
-            try:
-                led_pin = self.LED_PINS[led_index]
-                lgpio.gpio_write(self.h, led_pin, state)
-                return True
-            except Exception as e:
-                self.log_message(f"Error setting LED {led_index} state: {e}")
+        # Check if we have a valid GPIO handle
+        if self.h is None:
+            return False
+        
+        # Check if the pin is within range and was successfully claimed
+        if 0 <= led_index < len(self.LED_PINS):
+            led_pin = self.LED_PINS[led_index]
+            if led_pin in self.claimed_pins:
+                try:
+                    lgpio.gpio_write(self.h, led_pin, state)
+                    return True
+                except Exception as e:
+                    self.log_message(f"Error setting LED {led_index} state: {e}")
+        
         return False
 
     def read_pir_sensor(self, pir_index):
@@ -402,12 +440,23 @@ class OccupancyModule(ModuleBase):
             import random
             return 1 if random.random() < 0.2 else 0
         
-        if self.h is not None and 0 <= pir_index < len(self.PIR_PINS):
-            try:
-                pir_pin = self.PIR_PINS[pir_index]
-                return lgpio.gpio_read(self.h, pir_pin)
-            except Exception as e:
-                self.log_message(f"Error reading PIR {pir_index} state: {e}")
+        # Check if we have a valid GPIO handle
+        if self.h is None:
+            return 0
+        
+        # Check if the pin is within range and was successfully claimed
+        if 0 <= pir_index < len(self.PIR_PINS):
+            pir_pin = self.PIR_PINS[pir_index]
+            if pir_pin in self.claimed_pins:
+                try:
+                    return lgpio.gpio_read(self.h, pir_pin)
+                except Exception as e:
+                    self.log_message(f"Error reading PIR {pir_index} state: {e}")
+            else:
+                # Use simulation for pins we couldn't claim
+                import random
+                return 1 if random.random() < 0.2 else 0
+        
         return 0
 
     def perform_post_check(self):

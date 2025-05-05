@@ -160,7 +160,114 @@ class ModuleBase:
         # To be implemented by subclasses
         pass
 
-# Odor Module Implementation
+# Remove occupancy tracking using GPIO, replace with database-based detection
+class OccupancyMonitor:
+    """Class to monitor occupancy state from MongoDB instead of direct GPIO"""
+    def __init__(self, mongo_uri):
+        self.mongo_uri = mongo_uri
+        self.mongo_client = None
+        self.mongo_db = None
+        self.mongo_collection = None
+        self.is_occupied = False
+        self.last_check_time = 0
+        self.last_exit_time = time.time()
+        self.check_interval = 5  # Check every 5 seconds
+        self.connected = self.connect()
+
+    def connect(self):
+        """Connect to MongoDB occupancy collection"""
+        if not MONGODB_AVAILABLE:
+            return False
+            
+        try:
+            self.mongo_client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
+            self.mongo_client.admin.command('ping')
+            self.mongo_db = self.mongo_client["Smart_Cubicle"]
+            self.mongo_collection = self.mongo_db["occupancy_resource"]
+            return True
+        except Exception as e:
+            print(f"Error connecting to MongoDB for occupancy: {e}")
+            self.mongo_client = None
+            self.mongo_db = None
+            self.mongo_collection = None
+            return False
+
+    def check_occupancy(self):
+        """Check occupancy status from MongoDB"""
+        current_time = time.time()
+        
+        # Only check periodically to reduce database load
+        if current_time - self.last_check_time < self.check_interval:
+            return self.is_occupied
+            
+        self.last_check_time = current_time
+        
+        # If MongoDB not available, use simulated data
+        if not MONGODB_AVAILABLE or not self.mongo_collection:
+            # Simulate occupancy with 20% probability when using simulated data
+            if random.random() < 0.2:
+                if not self.is_occupied:
+                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Simulated occupancy: now OCCUPIED")
+                    self.is_occupied = True
+            else:
+                if self.is_occupied:
+                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Simulated occupancy: now VACANT")
+                    self.is_occupied = False
+                    self.last_exit_time = current_time
+            return self.is_occupied
+            
+        try:
+            # Query the most recent occupancy record
+            latest = self.mongo_collection.find_one(sort=[("timestamp", -1)])
+            
+            if latest:
+                # Check all cubicles - if any is occupied, the space is occupied
+                previous_state = self.is_occupied
+                new_occupied = False
+                
+                for i in range(1, 4):
+                    cubicle_status = latest.get("data", {}).get(f"CUB{i}", {}).get("status")
+                    if cubicle_status == "OCCUPIED":
+                        new_occupied = True
+                        break
+                
+                # If state changed from occupied to vacant, record exit time
+                if previous_state and not new_occupied:
+                    self.last_exit_time = current_time
+                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Occupancy changed: now VACANT")
+                
+                # If state changed from vacant to occupied, log it
+                if not previous_state and new_occupied:
+                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Occupancy changed: now OCCUPIED")
+                
+                self.is_occupied = new_occupied
+                return self.is_occupied
+            
+            return self.is_occupied
+            
+        except Exception as e:
+            print(f"Error checking occupancy from MongoDB: {e}")
+            # Try to reconnect
+            self.connect()
+            return self.is_occupied
+    
+    def get_last_exit_time(self):
+        """Get the time of the last exit"""
+        return self.last_exit_time
+    
+    def is_space_occupied(self):
+        """Get current occupancy state"""
+        return self.check_occupancy()
+    
+    def close(self):
+        """Close connection"""
+        if self.mongo_client:
+            try:
+                self.mongo_client.close()
+            except:
+                pass
+
+# Modify OdorModule class to use OccupancyMonitor instead of direct GPIO
 class OdorModule(ModuleBase):
     def __init__(self):
         super().__init__("Odor")
@@ -170,6 +277,7 @@ class OdorModule(ModuleBase):
         self.FAN_PIN = 13          # GPIO pin for fan control
         self.READING_INTERVAL = 5  # Seconds between readings
         self.FAN_THRESHOLD = 200   # Threshold for fan activation
+        self.FAN_POST_EXIT_DURATION = 10  # Seconds to leave fan on after exit
         
         # MongoDB settings
         self.MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
@@ -177,6 +285,9 @@ class OdorModule(ModuleBase):
         # Local storage settings
         self.DATA_DIR = "/home/admin/Documents/local-data"
         self.LOCAL_FILE = os.path.join(self.DATA_DIR, "odor-data.json")
+        
+        # Occupancy monitor (using MongoDB instead of GPIO)
+        self.occupancy_monitor = OccupancyMonitor(self.MONGO_URI)
         
         # Global variables
         self.h = None                  # GPIO handle
@@ -194,7 +305,8 @@ class OdorModule(ModuleBase):
             "sensor_state": "DOWN",
             "fan_state": "OFF",
             "last_reading": time.time(),
-            "status": "GOOD"  # AIR QUALITY STATUS ("GOOD", "POOR", "BAD")
+            "status": "GOOD",  # AIR QUALITY STATUS ("GOOD", "POOR", "BAD")
+            "occupancy": "VACANT"  # Occupancy state
         }
         
         # If we're on Windows, adjust the paths
@@ -212,7 +324,8 @@ class OdorModule(ModuleBase):
                 "sensor_value": 0,
                 "previous_value": 0,
                 "air_quality": "GOOD",
-                "fan_state": "OFF"
+                "fan_state": "OFF",
+                "occupancy": "VACANT"
             }
         }
 
@@ -368,6 +481,10 @@ class OdorModule(ModuleBase):
             
         # Or if fan state changed
         if current_reading["data"]["fan_state"] != previous_reading["data"]["fan_state"]:
+            return True
+            
+        # Or if occupancy state changed
+        if current_reading["data"]["occupancy"] != previous_reading["data"]["occupancy"]:
             return True
             
         return False
@@ -543,6 +660,29 @@ class OdorModule(ModuleBase):
         """Get recent log messages"""
         return list(self.log_queue)[-count:]
 
+    def update_devices(self):
+        """Update device states based on occupancy from MongoDB"""
+        # Check if space is occupied
+        is_occupied = self.occupancy_monitor.is_space_occupied()
+        self.sensor_data["occupancy"] = "OCCUPIED" if is_occupied else "VACANT"
+        
+        current_time = time.time()
+        current_fan_state = self.sensor_data["fan_state"] == "ON"
+        last_exit_time = self.occupancy_monitor.get_last_exit_time()
+        
+        # Fan control logic
+        if is_occupied:
+            # Turn on fan when occupied
+            if not current_fan_state:
+                self.log_message("Occupied space detected - activating fan")
+                self.set_fan_state(1)
+                
+        elif not is_occupied and current_fan_state:
+            # Check if post-exit duration has passed
+            if current_time - last_exit_time > self.FAN_POST_EXIT_DURATION:
+                self.log_message(f"Space vacant for {int(current_time - last_exit_time)} seconds - deactivating fan")
+                self.set_fan_state(0)
+
     def run(self):
         """Main function to monitor odor levels"""
         if not self.setup_hardware():
@@ -568,9 +708,13 @@ class OdorModule(ModuleBase):
         # Initial reading
         sensor_value = self.read_mq2_sensor()
         air_quality = self.get_air_quality_status(sensor_value)
-        fan_state = "ON" if sensor_value >= self.FAN_THRESHOLD else "OFF"
         
-        # Set fan based on reading
+        # Check occupancy state
+        is_occupied = self.occupancy_monitor.is_space_occupied()
+        self.sensor_data["occupancy"] = "OCCUPIED" if is_occupied else "VACANT"
+        
+        # Set fan state based on occupancy and sensor reading
+        fan_state = "ON" if (is_occupied or sensor_value >= self.FAN_THRESHOLD) else "OFF"
         self.set_fan_state(1 if fan_state == "ON" else 0)
         
         # Update sensor data
@@ -584,8 +728,9 @@ class OdorModule(ModuleBase):
         initial_data["data"]["previous_value"] = sensor_value
         initial_data["data"]["air_quality"] = air_quality
         initial_data["data"]["fan_state"] = fan_state
+        initial_data["data"]["occupancy"] = self.sensor_data["occupancy"]
         
-        self.log_message(f"Initial reading: {sensor_value} - Air quality: {air_quality} - Fan: {fan_state}")
+        self.log_message(f"Initial reading: {sensor_value} - Air quality: {air_quality} - Fan: {fan_state} - Occupancy: {self.sensor_data['occupancy']}")
         self.save_odor_data(initial_data)
         self.previous_reading = initial_data
         self.reading_counter += 1
@@ -594,11 +739,17 @@ class OdorModule(ModuleBase):
         
         # Main monitoring loop
         last_reading_time = time.time()
+        last_device_update_time = time.time()
         
         while self.running and not self.stop_event.is_set():
             if not self.paused:
                 try:
                     current_time = time.time()
+                    
+                    # Update devices state every second
+                    if current_time - last_device_update_time >= 1:
+                        self.update_devices()
+                        last_device_update_time = current_time
                     
                     # Check if it's time for a new reading
                     if current_time - last_reading_time >= self.READING_INTERVAL:
@@ -611,8 +762,12 @@ class OdorModule(ModuleBase):
                         # Determine air quality
                         air_quality = self.get_air_quality_status(sensor_value)
                         
-                        # Determine if fan should be on
-                        should_fan_be_on = sensor_value >= self.FAN_THRESHOLD
+                        # Get occupancy status
+                        is_occupied = self.occupancy_monitor.is_space_occupied()
+                        occupancy_status = "OCCUPIED" if is_occupied else "VACANT"
+                        
+                        # Determine if fan should be on based on both occupancy and air quality
+                        should_fan_be_on = is_occupied or sensor_value >= self.FAN_THRESHOLD
                         
                         # Update fan state if needed
                         if (should_fan_be_on and self.sensor_data["fan_state"] == "OFF") or \
@@ -626,6 +781,7 @@ class OdorModule(ModuleBase):
                         self.sensor_data["previous_value"] = prev_value
                         self.sensor_data["value"] = sensor_value
                         self.sensor_data["status"] = air_quality
+                        self.sensor_data["occupancy"] = occupancy_status
                         self.sensor_data["last_reading"] = current_time
                         
                         # Create current reading data
@@ -634,9 +790,10 @@ class OdorModule(ModuleBase):
                         current_data["data"]["previous_value"] = prev_value
                         current_data["data"]["air_quality"] = air_quality
                         current_data["data"]["fan_state"] = current_fan_state
+                        current_data["data"]["occupancy"] = occupancy_status
                         
                         # Log current reading
-                        self.log_message(f"Reading: {sensor_value} - Air quality: {air_quality} - Fan: {current_fan_state}")
+                        self.log_message(f"Reading: {sensor_value} - Air quality: {air_quality} - Fan: {current_fan_state} - Occupancy: {occupancy_status}")
                         
                         # Save if significant change or first reading
                         if self.should_save_reading(current_data, self.previous_reading):
@@ -669,9 +826,15 @@ class OdorModule(ModuleBase):
         final_data["data"]["previous_value"] = self.sensor_data["value"]
         final_data["data"]["air_quality"] = air_quality
         final_data["data"]["fan_state"] = "OFF"
+        final_data["data"]["occupancy"] = self.sensor_data["occupancy"]
         
         self.save_odor_data(final_data)
+        
+        # Clean up resources
         self.cleanup_hardware()
+        
+        # Close occupancy monitor
+        self.occupancy_monitor.close()
 
 # If run directly (for testing)
 if __name__ == "__main__":
