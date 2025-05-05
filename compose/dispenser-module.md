@@ -15,7 +15,7 @@ At the first run of the script the script will utilize all of the ultrasonic sen
 The remote database is the main priority when it is offline or down, then use the local.
 The remote database will reflect exactly to the local database
 The remote collection name is `dispenser_resource` and the database name is `Smart_Cubicle`
-The formatting of the data if from the `disp-data-format.json`, stritly follow the format. The default directory is `/home/admin/Documents/local-data` if the `local-data` directory is not exist then create one to store the `disp-data.json` file. If the file does not exist, create it.
+The formatting of the data if from the `dispenser-data.json`, stritly follow the format. The default directory is `/home/admin/Documents/local-data` if the `local-data` directory is not exist then create one to store the `disp-data.json` file. If the file does not exist, create it.
 
 Also the script will check if there are previous `reading` from the remote first before the local, so that it will resume the last update reading.
 

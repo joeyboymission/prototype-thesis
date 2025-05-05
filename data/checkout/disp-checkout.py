@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
+from bson import json_util
 
 # MongoDB Setup
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
@@ -18,35 +19,51 @@ def check_db_connection():
         return False, None
 
 def ensure_checkout_dir():
-    """Ensure the checkout directory exists"""
-    checkout_dir = os.path.dirname(os.path.abspath(__file__))
+    """Ensure the data-checkout directory exists"""
+    # Get the parent directory of the current script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(script_dir)
+    
+    # Create the data-checkout directory if it doesn't exist
+    checkout_dir = os.path.join(parent_dir, "data-checkout")
     if not os.path.exists(checkout_dir):
+        print(f"Creating data-checkout directory: {checkout_dir}")
         os.makedirs(checkout_dir)
+    
     return checkout_dir
 
 def export_data(client):
-    """Export data from dispenser_module collection to JSON"""
+    """Export data from dispenser_resource collection to JSON"""
     try:
         db = client["Smart_Cubicle"]
-        collection = db["dispenser_module"]
+        collection = db["dispenser_resource"]  # Correct collection name
         
-        # Get all documents
-        documents = list(collection.find({}, {'_id': False}))
+        # Get all documents including _id field
+        documents = list(collection.find({}))
         
         # Format timestamps for better readability
         for doc in documents:
             if 'timestamp' in doc:
-                doc['timestamp'] = doc['timestamp']
+                # Ensure timestamp is properly formatted
+                try:
+                    if isinstance(doc['timestamp'], str):
+                        # If already a string, ensure it's properly formatted
+                        datetime_obj = datetime.strptime(doc['timestamp'], "%Y-%m-%d %H:%M:%S")
+                        doc['timestamp'] = datetime_obj.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    # Keep original if formatting fails
+                    pass
         
         # Ensure checkout directory exists
         checkout_dir = ensure_checkout_dir()
         output_file = os.path.join(checkout_dir, 'disp-checkout.json')
         
-        # Write to JSON file
+        # Write to JSON file using json_util to handle MongoDB ObjectId
         with open(output_file, 'w') as f:
-            json.dump(documents, f, indent=2)
+            f.write(json_util.dumps(documents, indent=2))
             
         print(f"\nSuccessfully exported {len(documents)} documents to {output_file}")
+        print(f"File path: {output_file}")
         
     except Exception as e:
         print(f"\nError during export: {e}")

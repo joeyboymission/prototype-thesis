@@ -10,6 +10,8 @@ import random
 import signal
 import sys
 import statistics
+import lgpio
+import importlib.util
 
 # Try to import MongoDB
 try:
@@ -36,8 +38,17 @@ SERIAL_TIMEOUT = 5
 DATA_DIR = "/home/admin/Documents/local-data"
 LOCAL_FILE = os.path.join(DATA_DIR, "odor-data.json")
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
-LOGGING_INTERVAL = 10  # seconds
+LOGGING_INTERVAL = 120  # Changed from 10 to 120 seconds (2 minutes) to reduce database writes
 DECIMAL_PRECISION = 2  # For temperature and humidity values
+
+# GPIO settings for exhaust fan and air freshener
+GPIO_CHIP = 0
+FAN_RELAY_PIN = 23  # GPIO23, Pin 16, 8RELAY-B K2 for exhaust fan
+FRESHENER_RELAY_PIN = 24  # Changed from 22 to 24 to avoid conflict with DHT sensor on GPIO12 (Pin 32)
+FAN_POST_EXIT_DURATION = 10  # 10 seconds delay after visitor exits
+
+# DHT22 sensor pins (match dht22-test.py)
+DHT_PINS = [4, 5, 6, 12]  # GPIO numbers
 
 # Global variables
 arduino_serial = None
@@ -47,6 +58,28 @@ mongo_collection = None
 dht_sensors = []
 running = True
 sensor_data_buffer = []
+
+# GPIO control handle
+gpio_handle = None
+
+# Fan and freshener state
+fan_status = False
+freshener_triggered = False
+
+# Occupancy tracking
+is_occupied = False
+last_exit_time = time.time()
+
+# Import occu-mod-main.py to access occupancy data
+try:
+    spec = importlib.util.spec_from_file_location("occupancy_module", "../occupancy-mod-main/occu-mod-main.py")
+    occupancy_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(occupancy_module)
+    OCCUPANCY_MODULE_AVAILABLE = True
+    print("Occupancy module imported successfully.")
+except Exception as e:
+    OCCUPANCY_MODULE_AVAILABLE = False
+    print(f"Warning: Could not import occupancy module: {e}. Using local occupancy detection.")
 
 # Initialize data format
 def get_data_template():
@@ -291,35 +324,65 @@ def setup_dht_sensors():
         log_message("DHT sensor library not available, using simulated data.")
         return False
     
+    # First, check for and release any GPIO pins that might be in use to avoid conflicts
+    try:
+        # If we're running as root, try to release any pins that might be in use
+        if os.geteuid() == 0:
+            log_message("Running as root, checking for GPIO pins that might need releasing...")
+            for pin in DHT_PINS:
+                try:
+                    # This helps release pins that might be stuck from previous runs
+                    subprocess.run(['raspi-gpio', 'set', str(pin), 'ip', 'pn'], check=False)
+                    time.sleep(0.1)
+                except Exception:
+                    pass
+    except Exception as e:
+        log_message(f"Note: Unable to check/release GPIO pins: {e}")
+    
     dht_sensors = []
     
-    # Define pins mapping for Raspberry Pi
+    # Define pins mapping for Raspberry Pi - update to match dht22-test.py
     pin_mapping = [
-        {"name": "DHT1", "pin": board.D4},
-        {"name": "DHT2", "pin": board.D17},
-        {"name": "DHT3", "pin": board.D27},
-        {"name": "DHT4", "pin": board.D22}
+        {"name": "DHT1", "pin": board.D4},   # GPIO4, Pin 7
+        {"name": "DHT2", "pin": board.D5},   # GPIO5, Pin 29
+        {"name": "DHT3", "pin": board.D6},   # GPIO6, Pin 31
+        {"name": "DHT4", "pin": board.D12}   # GPIO12, Pin 32
     ]
     
     log_message("Initializing DHT22 temperature sensors...")
     
-    for item in pin_mapping:
+    # Small delay before initialization
+    time.sleep(1)
+    
+    # First attempt to initialize all sensors without testing
+    for i, item in enumerate(pin_mapping):
         try:
             log_message(f"Initializing {item['name']} on pin {item['pin']}")
-            sensor = adafruit_dht.DHT22(item['pin'])
-            # Test read to verify it works
-            try:
-                test_temp = sensor.temperature
-                test_hum = sensor.humidity
-                if test_temp is not None and test_hum is not None:
-                    dht_sensors.append(sensor)
-                    log_message(f"Successfully initialized {item['name']}")
-                else:
-                    log_message(f"Invalid readings from {item['name']}, skipping")
-            except Exception as e:
-                log_message(f"Error testing {item['name']}: {e}")
+            sensor = adafruit_dht.DHT22(item['pin'], use_pulseio=False)  # Add use_pulseio=False for more reliable operation
+            dht_sensors.append(sensor)
+            log_message(f"Added {item['name']} to sensor list")
         except Exception as e:
-            log_message(f"Failed to initialize {item['name']}: {e}")
+            log_message(f"Error initializing {item['name']}: {e}")
+    
+    # Wait for sensors to stabilize
+    time.sleep(2)
+    
+    # Now test each sensor but keep all in the list regardless of test result
+    working_sensors = 0
+    for i, sensor in enumerate(dht_sensors):
+        sensor_name = f"DHT{i+1}"
+        try:
+            # Try to read temperature
+            test_temp = sensor.temperature
+            test_hum = sensor.humidity
+            if test_temp is not None and test_hum is not None:
+                log_message(f"Successfully tested {sensor_name}: {test_temp:.1f}°C, {test_hum:.1f}%")
+                working_sensors += 1
+            else:
+                log_message(f"Invalid readings from {sensor_name}, will retry during operation")
+        except Exception as e:
+            log_message(f"Test error for {sensor_name}: {e}")
+            log_message(f"Will retry {sensor_name} during normal operation")
     
     # Report status
     active_count = len(dht_sensors)
@@ -327,7 +390,8 @@ def setup_dht_sensors():
         log_message("No DHT sensors initialized, using simulated data")
         return False
     else:
-        log_message(f"Initialized {active_count} DHT sensors")
+        log_message(f"Initialized {active_count} DHT sensors ({working_sensors} working)")
+        # Continue even if some sensors aren't working properly yet
         return True
 
 def connect_to_mongodb():
@@ -375,35 +439,45 @@ def read_temp_sensors():
         ]
     
     readings = []
+    retry_count = 3  # Add retry logic for more reliable readings
     
+    # Try to read each sensor
     for i, sensor in enumerate(dht_sensors):
-        try:
-            time.sleep(0.2)  # DHT sensors need time between readings
-            
-            temperature = sensor.temperature
-            humidity = sensor.humidity
-            
-            # Validate readings
-            if (temperature is not None and humidity is not None and
-                -40 <= temperature <= 80 and 0 <= humidity <= 100):
-                readings.append({
-                    "temp": round(temperature, DECIMAL_PRECISION),
-                    "hum": round(humidity, DECIMAL_PRECISION)
-                })
-            else:
-                # Use simulated data for invalid readings
-                readings.append({
-                    "temp": round(random.uniform(20, 35), DECIMAL_PRECISION),
-                    "hum": round(random.uniform(40, 80), DECIMAL_PRECISION)
-                })
-                log_message(f"DHT sensor {i+1} gave invalid reading, using simulated data")
-        except Exception as e:
-            log_message(f"DHT sensor {i+1} error: {e}")
-            # Use simulated data on error
+        valid_reading = False
+        temp = None
+        hum = None
+        
+        # Try multiple times before giving up
+        for attempt in range(retry_count):
+            try:
+                # DHT sensors need time between readings
+                time.sleep(0.2)
+                
+                temp = sensor.temperature
+                hum = sensor.humidity
+                
+                # Validate readings
+                if (temp is not None and hum is not None and
+                    -40 <= temp <= 80 and 0 <= hum <= 100):
+                    valid_reading = True
+                    break
+            except Exception as e:
+                if attempt == retry_count - 1:  # Only log on final attempt
+                    log_message(f"DHT sensor {i+1} error (attempt {attempt+1}): {e}")
+                time.sleep(0.5)  # Wait before retry
+        
+        if valid_reading:
+            readings.append({
+                "temp": round(temp, DECIMAL_PRECISION),
+                "hum": round(hum, DECIMAL_PRECISION)
+            })
+        else:
+            # Use simulated data for invalid readings
             readings.append({
                 "temp": round(random.uniform(20, 35), DECIMAL_PRECISION),
                 "hum": round(random.uniform(40, 80), DECIMAL_PRECISION)
             })
+            log_message(f"DHT sensor {i+1} gave invalid reading after {retry_count} attempts, using simulated data")
     
     # If we don't have enough readings, pad with simulated data
     while len(readings) < 4:
@@ -516,12 +590,16 @@ def buffer_sensor_data(gas_values, temp_readings):
     
     sensor_data_buffer.append({
         "gas": gas_values,
-        "temp": temp_readings
+        "temp": temp_readings,
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
     
-    # Keep buffer size reasonable
-    if len(sensor_data_buffer) > 10:
-        sensor_data_buffer.pop(0)
+    # Keep buffer size reasonable - increased to cover the full 2-minute interval
+    # 24 entries = 2 minutes (at 5 second intervals)
+    max_buffer_size = 24
+    if len(sensor_data_buffer) > max_buffer_size:
+        # Remove oldest entries
+        sensor_data_buffer = sensor_data_buffer[-max_buffer_size:]
 
 def calculate_average_from_buffer():
     """Calculate average values from buffered sensor data"""
@@ -538,6 +616,9 @@ def calculate_average_from_buffer():
         {"temp": 0.0, "hum": 0.0},
         {"temp": 0.0, "hum": 0.0}
     ]
+    
+    # Log how many data points are being averaged
+    log_message(f"Calculating averages from {len(sensor_data_buffer)} data points over the past {LOGGING_INTERVAL} seconds")
     
     # Sum all values
     for data in sensor_data_buffer:
@@ -572,6 +653,7 @@ def log_sensor_data(gas_values, temp_readings):
 
 def save_sensor_data(gas_values, temp_readings):
     """Save sensor data to database(s)"""
+    global sensor_data_buffer
     data = get_data_template()
     
     # Fill in gas values
@@ -582,6 +664,8 @@ def save_sensor_data(gas_values, temp_readings):
     for i in range(4):
         data["dht"][f"TEMP{i+1}"]["temp"] = temp_readings[i]["temp"]
         data["dht"][f"TEMP{i+1}"]["hum"] = temp_readings[i]["hum"]
+    
+    # Note: Removed additional fields to keep exact format as odor-data-format.json
     
     # Save to local storage first
     local_saved = save_to_local_storage(data)
@@ -597,8 +681,17 @@ def save_sensor_data(gas_values, temp_readings):
     else:
         log_message("Status: FAILED TO SAVE DATA")
     
+    # Detailed logging (keep this for console only, not saved to DB)
+    buffer_count = len(sensor_data_buffer) if sensor_data_buffer else 0
+    log_message(f"Saved aggregated data from {buffer_count} readings over {LOGGING_INTERVAL} seconds")
     log_message(f"Odor Data: {gas_values[0]} | {gas_values[1]} | {gas_values[2]} | {gas_values[3]}")
     log_message(f"Temp Data: {temp_readings[0]['temp']} | {temp_readings[1]['temp']} | {temp_readings[2]['temp']} | {temp_readings[3]['temp']}")
+    
+    # Still log fan status and occupancy for console, but not saved to DB
+    fan_status_str = "on" if fan_status else "off"
+    freshener_status_str = "triggered" if freshener_triggered else "off"
+    occupancy_status_str = "occupied" if is_occupied else "vacant"
+    log_message(f"Fan: {fan_status_str} | Freshener: {freshener_status_str} | Occupancy: {occupancy_status_str}")
 
 def signal_handler(sig, frame):
     """Handle Ctrl+C to cleanly exit the program"""
@@ -618,13 +711,13 @@ def print_initialization_example():
 [2023-07-15 14:30:47] Initializing DHT22 temperature sensors...
 [2023-07-15 14:30:47] Initializing DHT1 on pin D4
 [2023-07-15 14:30:48] Successfully initialized DHT1
-[2023-07-15 14:30:48] Initializing DHT2 on pin D17
+[2023-07-15 14:30:48] Initializing DHT2 on pin D5
 [2023-07-15 14:30:49] Successfully initialized DHT2
-[2023-07-15 14:30:49] Initializing DHT3 on pin D27
-[2023-07-15 14:30:50] Error testing DHT3: Device not found
-[2023-07-15 14:30:50] Initializing DHT4 on pin D22
+[2023-07-15 14:30:49] Initializing DHT3 on pin D6
+[2023-07-15 14:30:50] Successfully initialized DHT3
+[2023-07-15 14:30:50] Initializing DHT4 on pin D12
 [2023-07-15 14:30:51] Successfully initialized DHT4
-[2023-07-15 14:30:51] Initialized 3 DHT sensors
+[2023-07-15 14:30:51] Initialized 4 DHT sensors
 [2023-07-15 14:30:51] Connecting to MongoDB...
 [2023-07-15 14:30:52] Connected to MongoDB successfully!
 [2023-07-15 14:30:52] Starting continuous monitoring. Press Ctrl+C to stop.
@@ -659,8 +752,144 @@ def initialize_storage():
     
     return True
 
+def setup_gpio():
+    """Initialize GPIO for exhaust fan and air freshener control"""
+    global gpio_handle
+    
+    try:
+        log_message("Initializing GPIO for exhaust fan and air freshener...")
+        gpio_handle = lgpio.gpiochip_open(GPIO_CHIP)
+        
+        # Setup fan relay pin
+        lgpio.gpio_claim_output(gpio_handle, FAN_RELAY_PIN)
+        lgpio.gpio_write(gpio_handle, FAN_RELAY_PIN, 1)  # Ensure fan is off initially (HIGH = OFF)
+        
+        # Setup air freshener relay pin
+        lgpio.gpio_claim_output(gpio_handle, FRESHENER_RELAY_PIN)
+        lgpio.gpio_write(gpio_handle, FRESHENER_RELAY_PIN, 1)  # Ensure freshener is off initially (HIGH = OFF)
+        
+        log_message("GPIO for exhaust fan and air freshener initialized successfully")
+        return True
+    except Exception as e:
+        log_message(f"Error initializing GPIO: {e}")
+        return False
+
+def toggle_fan(state):
+    """Toggle exhaust fan on or off (active-low: LOW = ON, HIGH = OFF)"""
+    global fan_status, gpio_handle
+    
+    if gpio_handle is None:
+        log_message("Error: GPIO not initialized")
+        return False
+    
+    try:
+        # Set GPIO pin: LOW (0) to activate, HIGH (1) to deactivate
+        lgpio.gpio_write(gpio_handle, FAN_RELAY_PIN, 0 if state else 1)
+        fan_status = state
+        log_message(f"Exhaust Fan {'ON' if state else 'OFF'}")
+        return True
+    except Exception as e:
+        log_message(f"Error toggling exhaust fan: {e}")
+        return False
+
+def trigger_air_freshener():
+    """Trigger air freshener with a 500ms pulse"""
+    global freshener_triggered, gpio_handle
+    
+    if gpio_handle is None:
+        log_message("Error: GPIO not initialized")
+        return False
+    
+    try:
+        log_message("Triggering air freshener (500ms pulse)...")
+        lgpio.gpio_write(gpio_handle, FRESHENER_RELAY_PIN, 0)  # LOW to activate
+        time.sleep(0.5)  # 500ms pulse
+        lgpio.gpio_write(gpio_handle, FRESHENER_RELAY_PIN, 1)  # HIGH to deactivate
+        freshener_triggered = True
+        log_message("Air freshener triggered successfully")
+        return True
+    except Exception as e:
+        log_message(f"Error triggering air freshener: {e}")
+        return False
+
+def cleanup_gpio():
+    """Clean up GPIO resources"""
+    global gpio_handle
+    
+    if gpio_handle is not None:
+        try:
+            # Ensure devices are turned off
+            lgpio.gpio_write(gpio_handle, FAN_RELAY_PIN, 1)  # Fan off (HIGH)
+            lgpio.gpio_write(gpio_handle, FRESHENER_RELAY_PIN, 1)  # Freshener off (HIGH)
+            
+            # Free GPIO resources
+            lgpio.gpio_free(gpio_handle, FAN_RELAY_PIN)
+            lgpio.gpio_free(gpio_handle, FRESHENER_RELAY_PIN)
+            lgpio.gpiochip_close(gpio_handle)
+            gpio_handle = None
+            log_message("GPIO resources cleaned up")
+        except Exception as e:
+            log_message(f"Error cleaning up GPIO: {e}")
+
+def check_occupancy():
+    """Check occupancy status from occupancy module or fallback to direct check"""
+    global is_occupied, last_exit_time
+    
+    # If occupancy module is available, use it
+    if OCCUPANCY_MODULE_AVAILABLE:
+        try:
+            # Access the current_state from the imported occupancy module
+            current_occupancy_state = occupancy_module.current_state
+            
+            # If state changed from occupied to vacant, record exit time
+            if is_occupied and current_occupancy_state == occupancy_module.STATE_VACANT:
+                last_exit_time = time.time()
+                log_message("Visitor exited (detected from occupancy module)")
+                trigger_on_exit()
+            
+            # Update internal state
+            is_occupied = (current_occupancy_state == occupancy_module.STATE_OCCUPIED)
+            
+            return is_occupied
+        except Exception as e:
+            log_message(f"Error accessing occupancy module: {e}")
+    
+    # Fallback: Just return current state, no change detection
+    return is_occupied
+
+def trigger_on_entry():
+    """Actions to perform when a visitor enters"""
+    # Turn on exhaust fan
+    toggle_fan(True)
+    log_message("Visitor entered: Exhaust fan activated")
+
+def trigger_on_exit():
+    """Actions to perform when a visitor exits"""
+    # Air freshener trigger
+    trigger_air_freshener()
+    log_message("Visitor exited: Air freshener triggered")
+    
+    # Fan will be turned off after the delay period in the main loop
+
+def update_devices():
+    """Update device states based on occupancy"""
+    global fan_status, last_exit_time
+    
+    current_time = time.time()
+    
+    # Update fan status
+    if is_occupied:
+        # Turn on fan when occupied
+        if not fan_status:
+            toggle_fan(True)
+    elif not is_occupied and fan_status:
+        # Turn off fan after delay when vacant
+        if current_time - last_exit_time > FAN_POST_EXIT_DURATION:
+            toggle_fan(False)
+            log_message(f"Exhaust fan turned off after {FAN_POST_EXIT_DURATION} seconds of vacancy")
+
 def main():
-    global running
+    global running, is_occupied, fan_status, freshener_triggered
     
     # Setup signal handler for Ctrl+C
     signal.signal(signal.SIGINT, signal_handler)
@@ -670,6 +899,12 @@ def main():
     # Initialize storage system
     if not initialize_storage():
         log_message("Failed to initialize storage system")
+        return
+    
+    # Setup GPIO for fan and air freshener
+    gpio_setup_success = setup_gpio()
+    if not gpio_setup_success:
+        log_message("Failed to initialize exhaust fan and air freshener controls")
         return
     
     # Connect to MongoDB first
@@ -689,13 +924,33 @@ def main():
         log_message("Warning: No DHT sensors available. Using simulated temperature data.")
     
     log_message("Starting continuous monitoring. Press Ctrl+C to stop.")
+    log_message(f"Monitoring interval: 5 seconds | Database saving interval: {LOGGING_INTERVAL} seconds")
     
     last_log_time = time.time()
     last_save_time = time.time()
+    last_device_update_time = time.time()
+    last_occupancy_check_time = time.time()
+    saves_count = 0
     
     # Main loop
     while running:
         current_time = time.time()
+        
+        # Check occupancy every second
+        if current_time - last_occupancy_check_time >= 1:
+            previous_state = is_occupied
+            is_occupied = check_occupancy()
+            
+            # If just entered, trigger entry actions
+            if is_occupied and not previous_state:
+                trigger_on_entry()
+            
+            last_occupancy_check_time = current_time
+        
+        # Update device states every second
+        if current_time - last_device_update_time >= 1:
+            update_devices()
+            last_device_update_time = current_time
         
         # Read sensor data frequently but log less often
         if current_time - last_log_time >= 5:  # Read every 5 seconds
@@ -712,16 +967,22 @@ def main():
             # Log current readings
             log_sensor_data(gas_values, temp_readings)
             
+            # Show time remaining until next database save
+            time_until_save = int(LOGGING_INTERVAL - (current_time - last_save_time))
+            log_message(f"Monitoring active. Next database save in {time_until_save} seconds.")
+            
             last_log_time = current_time
         
         # Save buffered/averaged data at the specified interval
-        if current_time - last_save_time >= LOGGING_INTERVAL:  # Save every 10 seconds
+        if current_time - last_save_time >= LOGGING_INTERVAL:  # Save every 120 seconds (2 minutes)
             # Calculate average from buffer
             avg_data = calculate_average_from_buffer()
             
             if avg_data:
                 # Save the averaged data
                 save_sensor_data(avg_data["gas"], avg_data["temp"])
+                saves_count += 1
+                log_message(f"Database save #{saves_count} completed. Next save in {LOGGING_INTERVAL} seconds.")
             
             last_save_time = current_time
         
@@ -737,6 +998,9 @@ def main():
     # Clean up before exit
     log_message("Cleaning up...")
     
+    # Turn off devices
+    toggle_fan(False)
+    
     # Close Arduino connection
     if arduino_serial:
         try:
@@ -751,6 +1015,9 @@ def main():
             sensor.exit()
         except:
             pass
+    
+    # Clean up GPIO
+    cleanup_gpio()
     
     # Close MongoDB connection
     if mongo_client:

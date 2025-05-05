@@ -99,8 +99,8 @@ class OccupancyModule(ModuleBase):
     def __init__(self):
         super().__init__("Occupancy")
         # GPIO setup
-        self.SENSOR_PIN = 17  # E18-D80NK signal
-        self.BUZZER_PIN = 27  # Buzzer control
+        self.SENSOR_PIN = 17         # E18-D80NK proximity sensor
+        self.BUZZER_PIN = 27         # Buzzer for audio feedback
         self.chip = None
         
         # States
@@ -108,27 +108,36 @@ class OccupancyModule(ModuleBase):
         self.STATE_OCCUPIED = "Occupied"
         self.current_state = self.STATE_VACANT
         self.visitor_count = 0
-        self.log_list = []
-        self.log_queue = deque(maxlen=10)  # Keep last 10 log messages
+        self.current_visitor_id = None
         self.current_start_time = None
         self.last_state_change_time = time.time()
+        self.last_sensor_state = None
         self.detection_start = None
+        self.log_queue = deque(maxlen=10)  # Keep last 10 log messages
         
-        # MongoDB collection
-        if db:
-            self.mongo_collection = db['occupancy_data']
-        else:
-            self.mongo_collection = None
-        
-        # Local data storage
+        # Data storage
         self.DATA_DIR = "local-data"
         self.JSON_FILE = os.path.join(self.DATA_DIR, "occupancy-data.json")
         os.makedirs(self.DATA_DIR, exist_ok=True)
+        self.log_list = []
+        
+        # MongoDB collection
+        if db:
+            self.mongo_collection = db['occupancy']
+        else:
+            self.mongo_collection = None
         
         # Constants
         self.DEBOUNCE_TIME = 0.5  # 500ms
         self.SHORT_BEEP = 0.2     # 200ms
         self.LONG_BEEP = 1.0      # 1s
+    
+    def log_message(self, message):
+        """Print a message with timestamp and add to log queue"""
+        timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+        log_entry = f"{timestamp} {message}"
+        print(log_entry)
+        self.log_queue.append(log_entry)
     
     def perform_post_check(self):
         """Perform Power-On Self Test to verify all components are working"""
@@ -199,19 +208,13 @@ class OccupancyModule(ModuleBase):
             self.log_message("System check: FAILED - Some components not working")
             return False
     
-    def log_message(self, message):
-        """Print and store a log message with timestamp"""
-        timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-        log_entry = f"{timestamp} {message}"
-        print(log_entry)
-        self.log_queue.append(log_entry)
-    
     def setup_hardware(self):
         try:
             self.chip = lgpio.gpiochip_open(0)
             lgpio.gpio_claim_input(self.chip, self.SENSOR_PIN, lgpio.SET_PULL_UP)
             lgpio.gpio_claim_output(self.chip, self.BUZZER_PIN)
             lgpio.gpio_write(self.chip, self.BUZZER_PIN, 0)  # Ensure buzzer is off
+            self.last_sensor_state = lgpio.gpio_read(self.chip, self.SENSOR_PIN)
             self.log_message("GPIO initialized successfully")
             return True
         except Exception as e:
@@ -256,10 +259,11 @@ class OccupancyModule(ModuleBase):
         try:
             if os.path.exists(self.JSON_FILE):
                 with open(self.JSON_FILE, "r") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    return data
         except (json.JSONDecodeError, IOError) as e:
             self.log_message(f"Error reading JSON: {e}")
-        return {"visitors": [], "summary": {"total_visitors": 0, "average_duration": 0}, "current_presence": False}
+        return []
     
     def write_json(self, data):
         """Write data to JSON file atomically"""
@@ -280,7 +284,7 @@ class OccupancyModule(ModuleBase):
             
         try:
             result = self.mongo_collection.insert_one(entry)
-            self.log_message(f"Data saved to MongoDB (ID: {result.inserted_id})")
+            self.log_message("Data saved to MongoDB")
             return True
         except Exception as e:
             self.log_message(f"Error updating MongoDB: {e}")
@@ -299,6 +303,7 @@ class OccupancyModule(ModuleBase):
                 
                 if latest:
                     self.visitor_count = latest.get("visitor_id", 0)
+                    self.current_visitor_id = self.visitor_count
                     
                     # Check if there's an ongoing visit (no end_time)
                     ongoing = self.mongo_collection.find_one({
@@ -308,18 +313,21 @@ class OccupancyModule(ModuleBase):
                     
                     if ongoing:
                         self.current_state = self.STATE_OCCUPIED
-                        # Convert ISO string to timestamp if needed
+                        # Convert ISO string to timestamp
                         start_time_str = ongoing.get("start_time")
                         if start_time_str:
                             try:
                                 self.current_start_time = datetime.fromisoformat(
-                                    start_time_str.replace('.000000','')
+                                    start_time_str.replace('Z', '+00:00')
                                 ).timestamp()
                             except ValueError:
                                 # Handle different date formats
-                                self.current_start_time = datetime.strptime(
-                                    start_time_str, "%Y-%m-%dT%H:%M:%S.%f"
-                                ).timestamp()
+                                try:
+                                    self.current_start_time = datetime.strptime(
+                                        start_time_str, "%Y-%m-%dT%H:%M:%S.%f"
+                                    ).timestamp()
+                                except ValueError:
+                                    self.current_start_time = time.time()
                     
                     self.log_message(f"Loaded visitor count from MongoDB: {self.visitor_count}")
                     if self.current_state == self.STATE_OCCUPIED:
@@ -329,64 +337,166 @@ class OccupancyModule(ModuleBase):
                 self.log_message(f"Error loading from MongoDB: {e}")
         
         # Fallback to local storage
-        data = self.read_json()
-        self.log_list = data.get("visitors", [])
-        
-        if self.log_list:
-            self.visitor_count = max(entry["visitor_id"] for entry in self.log_list if "visitor_id" in entry)
-            ongoing_visit = next((entry for entry in self.log_list if "end_time" not in entry), None)
-            if ongoing_visit:
-                self.current_state = self.STATE_OCCUPIED
-                self.current_start_time = float(ongoing_visit["start_time"])
-                self.log_message("Ongoing visit detected from local storage")
-        else:
+        try:
+            data = self.read_json()
+            self.log_list = data
+            
+            if self.log_list:
+                # Find highest visitor_id
+                max_id = 0
+                for entry in self.log_list:
+                    if "visitor_id" in entry and entry["visitor_id"] > max_id:
+                        max_id = entry["visitor_id"]
+                
+                self.visitor_count = max_id
+                self.current_visitor_id = max_id
+                
+                # Check for ongoing visit
+                ongoing_visit = next((entry for entry in self.log_list if "end_time" not in entry), None)
+                if ongoing_visit:
+                    self.current_state = self.STATE_OCCUPIED
+                    self.current_start_time = ongoing_visit["start_time"]
+                    self.log_message("Ongoing visit detected from local storage")
+            else:
+                self.visitor_count = 0
+                self.log_message("No previous data found, starting with visitor count: 0")
+        except Exception as e:
+            self.log_message(f"Error loading from local storage: {e}")
             self.visitor_count = 0
-            self.log_message("No previous data found, starting with visitor count: 0")
             
         return True
     
-    def update_log(self, new_entry=None):
-        """Update log with new entry and recalculate summary"""
-        if new_entry:
-            self.log_list.append(new_entry)
-            self.update_mongo(new_entry)
+    def save_visitor_data(self, visitor_data):
+        """Save visitor data to both MongoDB and local storage"""
+        mongodb_success = False
+        local_success = False
         
-        # Calculate summary
-        total_visitors = len([e for e in self.log_list if "end_time" in e])
-        completed_visits = [e for e in self.log_list if "end_time" in e]
-        average_duration = sum(e["duration"] for e in completed_visits) / total_visitors if total_visitors > 0 else 0
+        # Only save complete records with all required fields
+        required_fields = ["type", "visitor_id", "start_time"]
+        if not all(field in visitor_data for field in required_fields):
+            self.log_message("Error: Incomplete visitor data, skipping save")
+            return False
         
-        data = {
-            "visitors": self.log_list,
-            "summary": {
-                "total_visitors": total_visitors,
-                "average_duration": average_duration
-            },
-            "current_presence": self.current_state == self.STATE_OCCUPIED
+        # Try MongoDB first
+        if self.mongo_collection is not None:
+            try:
+                result = self.mongo_collection.insert_one(visitor_data)
+                if result.inserted_id:
+                    mongodb_success = True
+                    self.log_message("Data saved to MongoDB")
+            except Exception as e:
+                self.log_message(f"Error saving to MongoDB: {e}")
+        
+        # Then try local storage
+        try:
+            # Update log list
+            self.log_list.append(visitor_data)
+            # Save to file
+            self.write_json(self.log_list)
+            local_success = True
+            self.log_message("Data saved to local storage")
+        except Exception as e:
+            self.log_message(f"Error saving to local storage: {e}")
+        
+        # Log appropriate status message
+        if mongodb_success and local_success:
+            self.log_message("DATA SAVED TO REMOTE AND LOCAL")
+        elif local_success:
+            self.log_message("DATA SAVED TO LOCAL ONLY")
+        else:
+            self.log_message("FAILED TO SAVE DATA")
+        
+        return mongodb_success or local_success
+    
+    def record_entry(self):
+        """Record a new visitor entry"""
+        self.visitor_count += 1
+        self.current_visitor_id = self.visitor_count
+        self.current_start_time = time.time()
+        self.current_state = self.STATE_OCCUPIED
+        
+        # Create entry record
+        new_entry = {
+            "type": "visit",
+            "visitor_id": self.current_visitor_id,
+            "start_time": self.current_start_time,
+            "start_time_iso": datetime.fromtimestamp(self.current_start_time).isoformat(),
+            "end_time": None,
+            "duration": None
         }
         
-        self.write_json(data)
+        # Save data
+        self.save_visitor_data(new_entry)
+        
+        # Single beep for entry
+        self.beep_buzzer(self.SHORT_BEEP)
+        
+        self.log_message(f"Entry detected - Visitor #{self.current_visitor_id}")
+    
+    def record_exit(self):
+        """Record visitor exit"""
+        if self.current_state != self.STATE_OCCUPIED or self.current_start_time is None:
+            self.log_message("Warning: Exit recorded without matching entry")
+            return
+        
+        # Calculate duration
+        end_time = time.time()
+        duration = end_time - self.current_start_time
+        
+        # Update visit record in log_list
+        for entry in self.log_list:
+            if entry.get("visitor_id") == self.current_visitor_id and entry.get("end_time") is None:
+                entry["end_time"] = end_time
+                entry["end_time_iso"] = datetime.fromtimestamp(end_time).isoformat()
+                entry["duration"] = duration
+                break
+        
+        # Also update in MongoDB if available
+        if self.mongo_collection:
+            try:
+                self.mongo_collection.update_one(
+                    {"visitor_id": self.current_visitor_id, "end_time": None},
+                    {"$set": {
+                        "end_time": datetime.fromtimestamp(end_time).isoformat(),
+                        "duration": duration
+                    }}
+                )
+            except Exception as e:
+                self.log_message(f"Error updating MongoDB: {e}")
+        
+        # Write updated log_list to local storage
+        self.write_json(self.log_list)
+        
+        # Double beep for exit
+        self.double_beep()
+        
+        # Log status
+        self.log_message(f"Exit detected - Duration: {self.format_duration(duration)}")
+        
+        # Reset state
+        self.current_state = self.STATE_VACANT
+        self.current_start_time = None
     
     def get_summary(self):
         """Return summary data for display"""
-        data = self.read_json()
-        summary = data.get("summary", {})
-        current_presence = data.get("current_presence", False)
+        # Calculate total visitors and average duration
+        total_visitors = len([e for e in self.log_list if "end_time" in e and e["end_time"] is not None])
+        completed_visits = [e for e in self.log_list if "end_time" in e and e["end_time"] is not None and "duration" in e]
         
-        # Calculate average duration in readable format
-        avg_duration = summary.get("average_duration", 0)
-        avg_duration_str = self.format_duration(avg_duration)
+        avg_duration = 0
+        if completed_visits:
+            avg_duration = sum(e["duration"] for e in completed_visits) / len(completed_visits)
         
         # Calculate current duration
         current_duration_str = "N/A"
-        if self.current_start_time and current_presence:
+        if self.current_start_time and self.current_state == self.STATE_OCCUPIED:
             current_duration = time.time() - self.current_start_time
             current_duration_str = self.format_duration(current_duration)
         
         return {
-            "status": "Occupied" if current_presence else "Vacant",
-            "total_visitors": summary.get("total_visitors", 0),
-            "avg_duration": avg_duration_str,
+            "status": self.current_state,
+            "total_visitors": total_visitors,
+            "avg_duration": self.format_duration(avg_duration),
             "current_duration": current_duration_str,
             "sensor_state": "UP" if self.chip else "DOWN",
             "log_messages": list(self.log_queue)
@@ -408,7 +518,10 @@ class OccupancyModule(ModuleBase):
         
         # Load initial state
         self.load_initial_state()
-        last_sensor_state = lgpio.gpio_read(self.chip, self.SENSOR_PIN)
+        
+        if self.last_sensor_state is None and self.chip:
+            self.last_sensor_state = lgpio.gpio_read(self.chip, self.SENSOR_PIN)
+        
         last_status_time = time.time()
         
         self.log_message(f"Starting occupancy monitoring. Current state: {self.current_state}")
@@ -420,84 +533,33 @@ class OccupancyModule(ModuleBase):
                     sensor_state = lgpio.gpio_read(self.chip, self.SENSOR_PIN)
                     
                     # Handle debounced sensor state changes
-                    if (current_time - self.last_state_change_time) > self.DEBOUNCE_TIME and sensor_state != last_sensor_state:
+                    if (current_time - self.last_state_change_time) > self.DEBOUNCE_TIME and sensor_state != self.last_sensor_state:
+                        # State transition detection
                         if self.current_state == self.STATE_VACANT and sensor_state == 0:
                             # Beam broken while vacant - potential entry
                             self.detection_start = current_time
-                        elif self.current_state == self.STATE_VACANT and sensor_state == 1 and last_sensor_state == 0 and self.detection_start:
+                        elif self.current_state == self.STATE_VACANT and sensor_state == 1 and self.last_sensor_state == 0 and self.detection_start:
                             # Beam restored while vacant after being broken - confirm entry
                             if (current_time - self.detection_start) < 2:  # Ensure full cycle within 2s
-                                # Record entry
-                                self.visitor_count += 1
-                                self.current_start_time = current_time
-                                self.current_state = self.STATE_OCCUPIED
-                                
-                                # Create visit record
-                                new_entry = {
-                                    "type": "visit",
-                                    "visitor_id": self.visitor_count,
-                                    "start_time": current_time,
-                                    "start_time_iso": datetime.fromtimestamp(current_time).strftime("%Y-%m-%dT%H:%M:%S.000000"),
-                                    "end_time": None,
-                                    "duration": None
-                                }
-                                
-                                # Update logs
-                                self.update_log(new_entry)
-                                
-                                # Audio feedback
-                                self.double_beep()
-                                
-                                # Log status
-                                self.log_message(f"Entry detected - Visitor #{self.visitor_count}")
-                                
+                                self.record_entry()
                                 self.last_state_change_time = current_time
                                 self.detection_start = None
-                                
                         elif self.current_state == self.STATE_OCCUPIED and sensor_state == 0:
                             # Beam broken while occupied - potential exit
                             self.detection_start = current_time
-                        elif self.current_state == self.STATE_OCCUPIED and sensor_state == 1 and last_sensor_state == 0 and self.detection_start:
+                        elif self.current_state == self.STATE_OCCUPIED and sensor_state == 1 and self.last_sensor_state == 0 and self.detection_start:
                             # Beam restored while occupied after being broken - confirm exit
-                            if (current_time - self.detection_start) < 2:  # Ensure full cycle within 2s
-                                # Record exit
-                                duration = current_time - self.current_start_time
-                                self.current_state = self.STATE_VACANT
-                                
-                                # Find the active visit and mark it as ended
-                                for entry in self.log_list:
-                                    if entry.get("visitor_id") == self.visitor_count and entry.get("end_time") is None:
-                                        entry["end_time"] = current_time
-                                        entry["end_time_iso"] = datetime.fromtimestamp(current_time).strftime("%Y-%m-%dT%H:%M:%S.000000")
-                                        entry["duration"] = duration
-                                        break
-                                
-                                # Audio feedback
-                                self.beep_buzzer(self.LONG_BEEP)
-                                
-                                # Update logs
-                                self.update_log()
-                                
-                                # Log status
-                                self.log_message(f"Exit detected - Duration: {self.format_duration(duration)}")
-                                
+                            if (current_time - self.detection_start) < 2:
+                                self.record_exit()
                                 self.last_state_change_time = current_time
                                 self.detection_start = None
                                 
-                                # Reset tracking variables
-                                self.current_start_time = None
-                        
-                        last_sensor_state = sensor_state
+                        self.last_sensor_state = sensor_state
                     
-                    # Display status periodically (every 60 seconds)
-                    if current_time - last_status_time >= 60:
-                        # Calculate total visitors and average duration
-                        total_visitors = len([e for e in self.log_list if "end_time" in e])
-                        completed_visits = [e for e in self.log_list if "end_time" in e]
-                        avg_duration = sum(e["duration"] for e in completed_visits) / total_visitors if total_visitors > 0 else 0
-                        
-                        # Log periodic status
-                        self.log_message(f"Status: {self.current_state} | Visitors: {total_visitors} | Avg Duration: {self.format_duration(avg_duration)}")
+                    # Display status periodically
+                    if current_time - last_status_time >= 30:
+                        summary = self.get_summary()
+                        self.log_message(f"Status: {summary['status']} | Visitors: {summary['total_visitors']} | Avg Duration: {summary['avg_duration']}")
                         last_status_time = current_time
                         
                 except Exception as e:
@@ -514,20 +576,18 @@ class DispenserModule(ModuleBase):
         # GPIO setup
         self.GPIO_CHIP = 0
         self.h = None
-        self.triggers = [7, 9, 11, 14]  # GPIO pins for ultrasonic triggers
-        self.echos = [8, 10, 13, 15]    # GPIO pins for ultrasonic echos
+        self.TRIGGERS = [7, 9, 11, 14]  # GPIO pins for ultrasonic triggers
+        self.ECHOS = [8, 10, 13, 15]    # GPIO pins for ultrasonic echos
         
-        # MongoDB collection
-        if db:
-            self.mongo_collection = db['dispenser_resource']
-        else:
-            self.mongo_collection = None
+        # Reading settings
+        self.READING_INTERVAL = 5        # Seconds between readings
+        self.SIGNIFICANT_CHANGE_THRESHOLD = 10.0  # Save data when volume changes by this amount (ml)
         
         # Local data storage
         self.DATA_DIR = "local-data"
         self.JSON_FILE = os.path.join(self.DATA_DIR, "dispenser-data.json")
         
-        # Container calibration data
+        # Calibration data for each container
         self.CALIBRATION_DATA = {
             "CONT1": {"full": 2.84, "empty": 12.67},
             "CONT2": {"full": 2.37, "empty": 12.21},
@@ -538,25 +598,27 @@ class DispenserModule(ModuleBase):
         # Container data
         self.container_data = {
             f"CONT{i+1}": {
-                "distance_cm": None,
-                "remaining_volume_ml": None,
-                "last_reading": time.time(),
-                "last_volume_change": 0,
+                "distance_cm": 0.00,
+                "previous_volume_ml": 0.00,
+                "remaining_volume_ml": 0.00,
                 "sensor_state": "DOWN",
-                "previous_volume_ml": None
+                "last_reading": time.time(),
+                "last_volume_change": 0
             } for i in range(4)
         }
         
-        # Reading counter and last saved volumes for change detection
-        self.reading_count = 0
-        self.previous_volumes = {}
-        self.last_saved_volumes = {}
-        self.SIGNIFICANT_CHANGE_THRESHOLD = 10.0  # ml
-        self.READING_INTERVAL = 10  # seconds
+        # MongoDB collection
+        if db:
+            self.mongo_collection = db['dispenser_resource']
+        else:
+            self.mongo_collection = None
+        
+        self.reading_counter = 0  # Reading counter
+        self.previous_readings = None  # Previous readings for change detection
         self.log_queue = deque(maxlen=20)  # Keep last 20 log messages
     
     def log_message(self, message):
-        """Print and store a log message with timestamp"""
+        """Log a message with timestamp"""
         timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
         log_entry = f"{timestamp} {message}"
         print(log_entry)
@@ -577,18 +639,21 @@ class DispenserModule(ModuleBase):
         # Check sensors
         sensors_ok = True
         self.log_message("Testing ultrasonic sensors...")
-        for i, (trigger, echo) in enumerate(zip(self.triggers, self.echos)):
+        for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
             distance = self.measure_distance(trigger, echo)
             if distance is not None and 0 < distance < 400:  # Valid range: 0-400cm
                 self.log_message(f"✓ SONIC{i+1} online - distance: {distance:.2f} cm")
+                self.container_data[f"CONT{i+1}"]["sensor_state"] = "UP"
             else:
                 self.log_message(f"✗ SONIC{i+1} offline or out of range")
                 sensors_ok = False
+                self.container_data[f"CONT{i+1}"]["sensor_state"] = "DOWN"
         
         # Check MongoDB connection
         db_status = "Offline"
         if self.mongo_collection:
             try:
+                # Test connection by pinging
                 if mongo_client:
                     mongo_client.admin.command('ping')
                     db_status = "Online"
@@ -627,34 +692,38 @@ class DispenserModule(ModuleBase):
     
     def setup_hardware(self):
         try:
+            self.log_message("Initializing GPIO...")
             self.h = lgpio.gpiochip_open(self.GPIO_CHIP)
             
             # Setup trigger pins as output
-            for trigger in self.triggers:
+            for trigger in self.TRIGGERS:
                 lgpio.gpio_claim_output(self.h, trigger)
                 
             # Setup echo pins as input
-            for echo in self.echos:
+            for echo in self.ECHOS:
                 lgpio.gpio_claim_input(self.h, echo)
                 
-            self.log_message("GPIO initialized successfully for dispenser module")
+            self.log_message("GPIO initialized successfully")
             return True
         except Exception as e:
-            self.log_message(f"Error setting up dispenser hardware: {e}")
+            self.log_message(f"Error initializing GPIO: {e}")
             return False
     
     def cleanup_hardware(self):
         if self.h:
             try:
                 # Free all claimed GPIO pins
-                for pin in self.triggers + self.echos:
-                    lgpio.gpio_free(self.h, pin)
+                for pin in self.TRIGGERS + self.ECHOS:
+                    try:
+                        lgpio.gpio_free(self.h, pin)
+                    except Exception:
+                        pass
                 
                 lgpio.gpiochip_close(self.h)
                 self.h = None
-                self.log_message("Dispenser hardware resources cleaned up")
+                self.log_message("Hardware resources cleaned up")
             except Exception as e:
-                self.log_message(f"Error cleaning up dispenser hardware: {e}")
+                self.log_message(f"Error cleaning up hardware: {e}")
     
     def measure_distance(self, trigger, echo, num_measurements=5):
         """Measure distance using ultrasonic sensor with multiple readings for accuracy"""
@@ -704,14 +773,11 @@ class DispenserModule(ModuleBase):
         
         return None
     
-    def calculate_usable_volume(self, container, distance):
-        """Calculate usable volume based on distance and calibration data"""
+    def calculate_volume(self, container, distance):
+        """Calculate remaining volume based on distance measurement"""
         if distance is None:
             return None
             
-        if self.CALIBRATION_DATA[container]["full"] is None or self.CALIBRATION_DATA[container]["empty"] is None:
-            return None
-        
         full_distance = self.CALIBRATION_DATA[container]["full"]
         empty_distance = self.CALIBRATION_DATA[container]["empty"]
         
@@ -737,7 +803,7 @@ class DispenserModule(ModuleBase):
                 # Find highest reading number
                 last_record = self.mongo_collection.find_one(sort=[("reading", -1)])
                 if last_record and "reading" in last_record:
-                    self.reading_count = last_record["reading"]
+                    self.reading_counter = last_record["reading"]
                     
                     # Load container data if available
                     if "data" in last_record:
@@ -745,10 +811,10 @@ class DispenserModule(ModuleBase):
                             if container in last_record["data"]:
                                 volume = last_record["data"][container].get("remaining_volume_ml")
                                 if volume is not None:
-                                    self.previous_volumes[container] = volume
-                                    self.last_saved_volumes[container] = volume
+                                    self.container_data[container]["previous_volume_ml"] = volume
+                                    self.container_data[container]["remaining_volume_ml"] = volume
                     
-                    self.log_message(f"Loaded reading counter from MongoDB: {self.reading_count}")
+                    self.log_message(f"Loaded reading counter from MongoDB: {self.reading_counter}")
                     return True
             except Exception as e:
                 self.log_message(f"Error loading from MongoDB: {e}")
@@ -762,7 +828,7 @@ class DispenserModule(ModuleBase):
                         # Find highest reading number
                         readings = [entry.get("reading", 0) for entry in data]
                         if readings:
-                            self.reading_count = max(readings)
+                            self.reading_counter = max(readings)
                             
                             # Get the last entry
                             last_entry = max(data, key=lambda x: x.get("reading", 0))
@@ -773,89 +839,103 @@ class DispenserModule(ModuleBase):
                                     if container in last_entry["data"]:
                                         volume = last_entry["data"][container].get("remaining_volume_ml")
                                         if volume is not None:
-                                            self.previous_volumes[container] = volume
-                                            self.last_saved_volumes[container] = volume
+                                            self.container_data[container]["previous_volume_ml"] = volume
+                                            self.container_data[container]["remaining_volume_ml"] = volume
                             
-                            self.log_message(f"Loaded reading counter from local storage: {self.reading_count}")
+                            self.log_message(f"Loaded reading counter from local storage: {self.reading_counter}")
                             return True
         except Exception as e:
             self.log_message(f"Error loading from local storage: {e}")
         
         # If no data found, start from zero
-        self.reading_count = 0
+        self.reading_counter = 0
         self.log_message("No previous readings found, starting with reading counter: 0")
         return False
     
-    def save_data(self, data):
-        """Save data to local JSON file and MongoDB if available"""
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(self.JSON_FILE), exist_ok=True)
+    def should_save_reading(self, current_data):
+        """Determine if the current reading should be saved based on changes"""
+        if not self.previous_readings:
+            return True
         
-        # Format data for storage
-        formatted_data = {
-            "reading": data["reading"],
-            "timestamp": data["timestamp"],
-            "data": {}
-        }
+        # Check for significant changes in any container
+        for container in self.container_data:
+            prev_vol = self.previous_readings["data"][container]["remaining_volume_ml"]
+            curr_vol = current_data["data"][container]["remaining_volume_ml"]
+            
+            # Calculate absolute change in volume
+            volume_change = abs(prev_vol - curr_vol)
+            
+            # Only save if the change is significant
+            if volume_change >= self.SIGNIFICANT_CHANGE_THRESHOLD:
+                # Get the whole numbers
+                prev_whole = int(prev_vol)
+                curr_whole = int(curr_vol)
+                
+                # Only save if whole numbers are different
+                if prev_whole != curr_whole:
+                    return True
         
-        # Format container data
-        for container in data["data"]:
-            formatted_data["data"][container] = {
-                "distance_cm": round(data["data"][container]["distance_cm"], 2) if data["data"][container]["distance_cm"] is not None else None,
-                "previous_volume_ml": round(data["data"][container]["previous_volume_ml"], 2) if data["data"][container]["previous_volume_ml"] is not None else None,
-                "remaining_volume_ml": round(data["data"][container]["remaining_volume_ml"], 2) if data["data"][container]["remaining_volume_ml"] is not None else None
-            }
-        
-        # Save to local storage
+        return False
+    
+    def save_to_local_storage(self, data):
+        """Save data to local JSON file"""
         try:
-            # Read existing data
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(self.JSON_FILE), exist_ok=True)
+            
             existing_data = []
             if os.path.exists(self.JSON_FILE):
                 try:
                     with open(self.JSON_FILE, "r") as f:
                         existing_data = json.load(f)
                 except json.JSONDecodeError:
-                    self.log_message("Warning: Existing file corrupt, creating new file")
+                    self.log_message("Creating new data file (existing file corrupt)")
             
-            # Append new reading
-            existing_data.append(formatted_data)
+            # Ensure data has the correct format
+            if not isinstance(existing_data, list):
+                existing_data = []
+            
+            existing_data.append(data)
             
             # Use atomic write to prevent corruption
             temp_file = self.JSON_FILE + ".tmp"
             with open(temp_file, "w") as f:
-                if 'ObjectId' in globals():
-                    json.dump(existing_data, f, indent=2, cls=json.JSONEncoder)
-                else:
-                    json.dump(existing_data, f, indent=2)
+                json.dump(existing_data, f, indent=2)
             os.replace(temp_file, self.JSON_FILE)
             
             self.log_message("Data saved to local storage")
-            local_saved = True
+            return True
         except Exception as e:
-            self.log_message(f"Error saving to local storage: {e}")
-            local_saved = False
+            self.log_message(f"Local storage error: {e}")
+            return False
+    
+    def save_to_mongodb(self, data):
+        """Save data to MongoDB"""
+        if not self.mongo_collection:
+            return False
         
-        # Save to MongoDB if available
-        if self.mongo_collection is not None:
-            try:
-                self.mongo_collection.insert_one(formatted_data)
-                self.log_message("Data also saved to MongoDB")
-                mongo_saved = True
-            except Exception as e:
-                self.log_message(f"Error saving to MongoDB: {e}")
-                mongo_saved = False
-        else:
-            mongo_saved = False
+        try:
+            self.mongo_collection.insert_one(data)
+            self.log_message("Data saved to MongoDB")
+            return True
+        except Exception as e:
+            self.log_message(f"Error saving to MongoDB: {e}")
+            return False
+    
+    def save_dispenser_data(self, data):
+        """Save dispenser data to both MongoDB and local storage"""
+        mongodb_success = self.save_to_mongodb(data)
+        local_success = self.save_to_local_storage(data)
         
         # Report overall status
-        if local_saved and mongo_saved:
+        if mongodb_success and local_success:
             self.log_message("Status: DATA SAVED TO REMOTE AND LOCAL")
-        elif local_saved:
+        elif local_success:
             self.log_message("Status: DATA SAVED TO LOCAL ONLY")
         else:
             self.log_message("Status: FAILED TO SAVE DATA")
             
-        return local_saved or mongo_saved
+        return mongodb_success or local_success
     
     def get_container_summary(self):
         """Get summary data for all containers"""
@@ -882,20 +962,29 @@ class DispenserModule(ModuleBase):
         
         # Initial readings
         initial_readings = []
-        for i, (trigger, echo) in enumerate(zip(self.triggers, self.echos)):
+        readings_data = {
+            "reading": self.reading_counter + 1,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data": {}
+        }
+        
+        for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
             container = f"CONT{i+1}"
             distance = self.measure_distance(trigger, echo)
-            volume = self.calculate_usable_volume(container, distance)
-            
-            # Store as both previous and last saved
-            self.previous_volumes[container] = volume
-            self.last_saved_volumes[container] = volume
+            volume = self.calculate_volume(container, distance)
             
             # Update container data
-            self.container_data[container]["distance_cm"] = distance
-            self.container_data[container]["remaining_volume_ml"] = volume
-            self.container_data[container]["previous_volume_ml"] = volume
+            self.container_data[container]["distance_cm"] = distance if distance is not None else 0
+            self.container_data[container]["remaining_volume_ml"] = volume if volume is not None else 0
+            self.container_data[container]["previous_volume_ml"] = volume if volume is not None else 0
             self.container_data[container]["sensor_state"] = "UP" if distance is not None else "DOWN"
+            
+            # Store data for saving
+            readings_data["data"][container] = {
+                "distance_cm": distance if distance is not None else 0,
+                "previous_volume_ml": volume if volume is not None else 0,
+                "remaining_volume_ml": volume if volume is not None else 0
+            }
             
             # Add to display
             if distance is not None and volume is not None:
@@ -905,6 +994,12 @@ class DispenserModule(ModuleBase):
         
         # Display initial readings
         self.log_message(" | ".join(initial_readings))
+        
+        # Save initial readings
+        self.save_dispenser_data(readings_data)
+        self.previous_readings = readings_data
+        self.reading_counter += 1
+        
         self.log_message("Dispenser monitoring ready")
         
         # Main monitoring loop
@@ -917,67 +1012,55 @@ class DispenserModule(ModuleBase):
                     
                     # Check if it's time for a new reading
                     if current_time - last_reading_time >= self.READING_INTERVAL:
-                        self.reading_count += 1
-                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        significant_change = False
-                        current_readings = []
-                        
-                        # Read all containers
+                        readings = []
                         current_data = {
-                            "reading": self.reading_count,
-                            "timestamp": timestamp,
+                            "reading": self.reading_counter + 1,
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "data": {}
                         }
                         
-                        for i, (trigger, echo) in enumerate(zip(self.triggers, self.echos)):
+                        for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
                             container = f"CONT{i+1}"
                             distance = self.measure_distance(trigger, echo)
-                            volume = self.calculate_usable_volume(container, distance)
+                            volume = self.calculate_volume(container, distance)
                             
-                            # Check if this is a significant change
-                            prev_volume = self.previous_volumes.get(container, 0)
-                            last_saved = self.last_saved_volumes.get(container, 0)
+                            prev_volume = self.container_data[container]["remaining_volume_ml"]
                             
-                            # Update container data structure
-                            self.container_data[container]["distance_cm"] = distance
-                            self.container_data[container]["remaining_volume_ml"] = volume
+                            # Update container data
+                            self.container_data[container]["distance_cm"] = distance if distance is not None else 0
                             self.container_data[container]["previous_volume_ml"] = prev_volume
-                            self.container_data[container]["last_reading"] = current_time
+                            self.container_data[container]["remaining_volume_ml"] = volume if volume is not None else 0
                             self.container_data[container]["sensor_state"] = "UP" if distance is not None else "DOWN"
+                            self.container_data[container]["last_reading"] = current_time
                             
-                            # Detect volume change
-                            if volume is not None and prev_volume is not None:
+                            # Calculate volume change if sensor is working
+                            if volume is not None and prev_volume is not None and prev_volume > volume:
                                 volume_change = prev_volume - volume
-                                if volume_change > 0:
-                                    self.container_data[container]["last_volume_change"] = round(volume_change, 2)
+                                self.container_data[container]["last_volume_change"] = round(volume_change, 2)
                             
-                            if volume is not None and last_saved is not None:
-                                if abs(volume - last_saved) >= self.SIGNIFICANT_CHANGE_THRESHOLD:
-                                    significant_change = True
-                                    self.last_saved_volumes[container] = volume
-                            
-                            # Format for display
-                            if distance is not None and volume is not None:
-                                current_readings.append(f"{container}: {distance:.2f} cm {volume:.2f} ml")
-                            else:
-                                current_readings.append(f"{container}: ERROR")
-                            
-                            # Store data
+                            # Store data for saving
                             current_data["data"][container] = {
                                 "distance_cm": distance if distance is not None else 0,
-                                "previous_volume_ml": prev_volume if prev_volume is not None else 0,
+                                "previous_volume_ml": prev_volume,
                                 "remaining_volume_ml": volume if volume is not None else 0
                             }
                             
-                            # Update previous volume
-                            self.previous_volumes[container] = volume
+                            # Format for display
+                            if distance is not None and volume is not None:
+                                readings.append(f"{container}: {distance:.2f} cm {volume:.2f} ml")
+                            else:
+                                readings.append(f"{container}: ERROR")
                         
                         # Display current readings
-                        self.log_message(" | ".join(current_readings))
+                        self.log_message(" | ".join(readings))
                         
-                        # Save data if significant change detected
-                        if significant_change:
-                            self.save_data(current_data)
+                        # Only save if there's a significant change
+                        if self.should_save_reading(current_data):
+                            self.save_dispenser_data(current_data)
+                            self.reading_counter += 1
+                        
+                        # Update previous readings
+                        self.previous_readings = current_data
                         
                         last_reading_time = current_time
                     
@@ -993,24 +1076,24 @@ class DispenserModule(ModuleBase):
         
         # Create final reading data
         final_data = {
-            "reading": self.reading_count + 1,
+            "reading": self.reading_counter + 1,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "data": {}
         }
         
-        for i, (trigger, echo) in enumerate(zip(self.triggers, self.echos)):
+        for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
             container = f"CONT{i+1}"
             distance = self.measure_distance(trigger, echo)
-            volume = self.calculate_usable_volume(container, distance)
-            prev_volume = self.previous_volumes.get(container, 0)
+            volume = self.calculate_volume(container, distance)
+            prev_volume = self.container_data[container]["remaining_volume_ml"]
             
             final_data["data"][container] = {
                 "distance_cm": distance if distance is not None else 0,
-                "previous_volume_ml": prev_volume if prev_volume is not None else 0,
+                "previous_volume_ml": prev_volume,
                 "remaining_volume_ml": volume if volume is not None else 0
             }
         
-        self.save_data(final_data)
+        self.save_dispenser_data(final_data)
         self.cleanup_hardware()
 
 # Odor Module Implementation
@@ -1020,43 +1103,42 @@ class OdorModule(ModuleBase):
         # GPIO setup
         self.GPIO_CHIP = 0
         self.h = None
-        self.FAN_RELAY_PIN = 23     # 8RELAY-B K2 for exhaust fan
-        self.FRESHENER_RELAY_PIN = 22  # 8RELAY-B K3 for air freshener
-        self.SENSOR_PIN = 17        # Occupancy sensor (E18-D80NK)
+        
+        # Fan and freshener GPIO pins
+        self.FAN_RELAY_PIN = 23  # GPIO23, Pin 16, 8RELAY-B K2 for exhaust fan
+        self.FRESHENER_RELAY_PIN = 24  # Changed from 22 to 24 to avoid conflict with DHT sensor on GPIO12 (Pin 32)
         
         # DHT22 pins
-        self.dht_devices = None
+        self.dht_devices = []
         self.dht_pins = [4, 5, 6, 12]  # GPIO pins for DHT22 sensors
         
-        # I2C setup for Arduino MQ135 sensors
-        self.bus = None
-        self.ARDUINO_ADDRESS = 8
+        # Arduino serial connection
         self.arduino_serial = None
         self.BAUD_RATE = 9600
         self.SERIAL_TIMEOUT = 5
+        
+        # Occupancy tracking
+        self.SENSOR_PIN = 17  # E18-D80NK for occupancy sensing
+        self.is_occupied = False
+        self.last_sensor_state = None
+        self.last_exit_time = time.time()
+        
+        # Fan and freshener state
+        self.fan_status = False
+        self.freshener_triggered = False
+        self.FAN_POST_EXIT_DURATION = 10  # 10 seconds delay after visitor exits
         
         # Data storage
         self.DATA_DIR = "local-data" 
         self.JSON_FILE = os.path.join(self.DATA_DIR, "odor-data.json")
         os.makedirs(self.DATA_DIR, exist_ok=True)
         
-        # Module state
-        self.fan_status = False
-        self.freshener_triggered = False
-        self.is_occupied = False
-        self.last_sensor_state = 1  # 1 = HIGH (no detection) with pull-up
-        self.last_exit_time = time.time()
-        self.last_spray_time = time.time()
-        self.aqi_history = []
-        self.aqi_trend = 0  # 1=increasing, 0=stable, -1=decreasing
-        self.aqi_change_timer = 0
+        # Sensor readings buffer
         self.sensor_data_buffer = []
         self.log_queue = deque(maxlen=30)  # Keep last 30 log messages
         
         # Constants
-        self.FAN_POST_EXIT_DURATION = 1200  # 20 minutes
-        self.last_time = time.time()  # For debouncing
-        self.LOGGING_INTERVAL = 10  # seconds
+        self.LOGGING_INTERVAL = 120  # seconds between saves (2 minutes)
         self.DECIMAL_PRECISION = 2  # For temperature and humidity values
         
         # MongoDB collection
@@ -1065,7 +1147,7 @@ class OdorModule(ModuleBase):
         else:
             self.mongo_collection = None
         
-        # Sensor data
+        # Sensor data tracking
         self.sensor_data = {
             f"sensor_{i+1}": {
                 "temperature": 0,
@@ -1101,81 +1183,73 @@ class OdorModule(ModuleBase):
         else:
             self.log_message("✗ MongoDB not configured")
         
-        # Simulate checking gas sensors
-        gas_sensors = ["GAS1", "GAS2", "GAS3", "GAS4"]
-        temp_sensors = ["TEMP1", "TEMP2", "TEMP3", "TEMP4"]
+        # Check DHT sensors
+        dht_status = "Offline"
+        if self.dht_devices:
+            for i, dht in enumerate(self.dht_devices):
+                if dht:
+                    try:
+                        t = dht.temperature
+                        h = dht.humidity
+                        if t is not None and h is not None:
+                            self.log_message(f"✓ DHT22 sensor {i+1} online: {t:.1f}°C, {h:.1f}%")
+                            dht_status = "Online"
+                            self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "UP"
+                        else:
+                            self.log_message(f"✗ DHT22 sensor {i+1} invalid readings")
+                            self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "DOWN"
+                    except Exception as e:
+                        self.log_message(f"✗ DHT22 sensor {i+1} error: {e}")
+                        self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "DOWN"
+                else:
+                    self.log_message(f"✗ DHT22 sensor {i+1} not initialized")
+                    self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "DOWN"
+        else:
+            self.log_message("✗ No DHT22 sensors found")
         
-        all_sensors_online = True
-        
-        # Check gas sensors
-        for i, sensor in enumerate(gas_sensors):
-            # Try to read sensor
-            status = "Offline"
+        # Check Arduino/gas sensors
+        arduino_status = "Offline"
+        if self.arduino_serial:
             try:
-                if self.bus:
-                    # Test I2C read
-                    data = self.bus.read_i2c_block_data(self.ARDUINO_ADDRESS, 0, 2)
-                    if data and len(data) >= 2:
-                        status = "Online"
-                elif self.arduino_serial:
-                    # Test serial read
-                    self.arduino_serial.write(b'r')
-                    time.sleep(0.5)
-                    response = self.arduino_serial.readline().decode('utf-8', errors='ignore')
-                    if ',' in response:
-                        status = "Online"
+                self.arduino_serial.write(b'R')
+                time.sleep(0.5)
+                response = self.arduino_serial.readline().decode().strip()
+                if response and ',' in response:
+                    values = response.split(',')
+                    if len(values) == 4:
+                        self.log_message(f"✓ Arduino gas sensors online: {values}")
+                        arduino_status = "Online"
+                        for i in range(4):
+                            self.sensor_data[f"sensor_{i+1}"]["gas_status"] = "UP"
+                    else:
+                        self.log_message(f"✗ Arduino returned invalid data: {response}")
+                else:
+                    self.log_message("✗ Arduino not responding")
             except Exception as e:
-                self.log_message(f"Error testing {sensor}: {e}")
-                status = "Offline"
+                self.log_message(f"✗ Arduino communication error: {e}")
+        else:
+            self.log_message("✗ Arduino not connected")
+        
+        # Check fan and freshener GPIO
+        relay_status = "Offline"
+        if self.h:
+            try:
+                # Test fan relay
+                lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 0)  # Turn on
+                time.sleep(0.2)
+                lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 1)  # Turn off
                 
-            self.log_message(f"> Checking {sensor}: {status}")
-            if status == "Offline":
-                all_sensors_online = False
-        
-        # Check temperature sensors
-        for i, sensor in enumerate(temp_sensors):
-            # Try to read sensor
-            status = "Offline"
-            if self.dht_devices and i < len(self.dht_devices) and self.dht_devices[i]:
-                try:
-                    t = self.dht_devices[i].temperature
-                    h = self.dht_devices[i].humidity
-                    if t is not None and h is not None:
-                        status = "Online"
-                except Exception as e:
-                    self.log_message(f"Error testing {sensor}: {e}")
-            
-            self.log_message(f"> Checking {sensor}: {status}")
-            if status == "Offline":
-                all_sensors_online = False
-        
-        # Check fan control
-        fan_status = "Offline"
-        try:
-            if self.h:
-                # Test relay control
-                lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 0)  # Activate
+                # Test freshener relay
+                lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 0)  # Turn on
                 time.sleep(0.2)
-                lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 1)  # Deactivate
-                fan_status = "Online"
-        except Exception as e:
-            self.log_message(f"Error testing fan relay: {e}")
-            
-        self.log_message(f"> Checking FAN relay: {fan_status}")
-        
-        # Check freshener control
-        freshener_status = "Offline"
-        try:
-            if self.h:
-                # Test relay control
-                lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 0)  # Activate
-                time.sleep(0.2)
-                lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 1)  # Deactivate
-                freshener_status = "Online"
-        except Exception as e:
-            self.log_message(f"Error testing freshener relay: {e}")
-            
-        self.log_message(f"> Checking FRESHENER relay: {freshener_status}")
+                lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 1)  # Turn off
+                
+                relay_status = "Online"
+                self.log_message("✓ Relay controls online")
+            except Exception as e:
+                self.log_message(f"✗ Relay control error: {e}")
+        else:
+            self.log_message("✗ GPIO not initialized")
         
         # Check local storage
         try:
@@ -1191,46 +1265,57 @@ class OdorModule(ModuleBase):
             storage_ok = False
         
         # Return overall status
-        return all_sensors_online or True  # Allow operation with some failed sensors
+        return (dht_status == "Online" or arduino_status == "Online") and (db_status == "Online" or storage_ok)
     
     def setup_hardware(self):
         try:
-            # Setup GPIO for fan, freshener, and occupancy
+            # Setup GPIO for sensors and actuators
             self.h = lgpio.gpiochip_open(self.GPIO_CHIP)
+            
+            # Setup fan and freshener relays
             lgpio.gpio_claim_output(self.h, self.FAN_RELAY_PIN)
             lgpio.gpio_claim_output(self.h, self.FRESHENER_RELAY_PIN)
-            lgpio.gpio_claim_input(self.h, self.SENSOR_PIN, pull=lgpio.PUD_UP)  # Pull-up for occupancy sensor
-            lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 1)  # Fan off (active-low)
-            lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 1)  # Freshener off (active-low)
+            lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 1)  # Ensure fan is off initially (HIGH = OFF)
+            lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 1)  # Ensure freshener is off initially (HIGH = OFF)
             
-            # Setup DHT22 sensors
+            # Setup occupancy sensor
+            lgpio.gpio_claim_input(self.h, self.SENSOR_PIN, lgpio.SET_PULL_UP)
+            self.last_sensor_state = lgpio.gpio_read(self.h, self.SENSOR_PIN)
+            
+            # Setup DHT22 temperature sensors
+            self.log_message("Initializing DHT22 temperature sensors...")
+            
             self.dht_devices = []
             for pin in self.dht_pins:
                 try:
                     # Map GPIO numbers to board pins
                     if pin == 4:
-                        self.dht_devices.append(adafruit_dht.DHT22(board.D4))
+                        sensor = adafruit_dht.DHT22(board.D4, use_pulseio=False)
                     elif pin == 5:
-                        self.dht_devices.append(adafruit_dht.DHT22(board.D5))
+                        sensor = adafruit_dht.DHT22(board.D5, use_pulseio=False)
                     elif pin == 6:
-                        self.dht_devices.append(adafruit_dht.DHT22(board.D6))
+                        sensor = adafruit_dht.DHT22(board.D6, use_pulseio=False)
                     elif pin == 12:
-                        self.dht_devices.append(adafruit_dht.DHT22(board.D12))
+                        sensor = adafruit_dht.DHT22(board.D12, use_pulseio=False)
+                    else:
+                        sensor = None
+                        
+                    if sensor:
+                        self.dht_devices.append(sensor)
+                        self.log_message(f"DHT22 sensor on GPIO{pin} initialized")
+                    else:
+                        self.dht_devices.append(None)
+                        self.log_message(f"Failed to map GPIO{pin} to board pin")
                 except Exception as e:
-                    self.log_message(f"Failed to initialize DHT22 on pin {pin}: {e}")
+                    self.log_message(f"Failed to initialize DHT22 on GPIO{pin}: {e}")
                     self.dht_devices.append(None)
             
-            # Try connecting to Arduino via I2C first
-            try:
-                self.bus = smbus.SMBus(1)  # I2C bus 1 on RPi
-                self.log_message("I2C bus initialized for gas sensors")
-            except Exception as e:
-                self.log_message(f"Failed to initialize I2C: {e}")
-                self.bus = None
-                
-                # Fall back to serial if I2C fails
-                self.try_connect_arduino_serial()
+            # Try to connect to Arduino for gas sensors
+            arduino_connected = self.try_connect_arduino()
+            if not arduino_connected:
+                self.log_message("Warning: Could not connect to Arduino. Will use simulated gas data.")
             
+            self.log_message("Hardware setup completed")
             return True
         except Exception as e:
             self.log_message(f"Error setting up odor hardware: {e}")
@@ -1240,291 +1325,239 @@ class OdorModule(ModuleBase):
         """Scan for available serial ports"""
         self.log_message("Scanning serial ports...")
         
-        ports = []
+        # Common USB-Serial patterns
+        patterns = [
+            '/dev/ttyUSB*',
+            '/dev/ttyACM*',
+            '/dev/ttyAMA*',
+            'COM[0-9]*'  # For Windows
+        ]
         
-        # For Linux
-        if os.name == 'posix':
-            # Get all tty devices
-            try:
-                ports = glob.glob('/dev/tty[A-Za-z]*')
-            except Exception:
-                pass
-        # For Windows
-        elif os.name == 'nt':
-            try:
-                # Scan COM ports
-                for i in range(256):
-                    try:
-                        port = f'COM{i}'
-                        s = serial.Serial(port)
-                        s.close()
-                        ports.append(port)
-                    except (OSError, serial.SerialException):
-                        pass
-            except Exception:
-                pass
-                
+        ports = []
+        for pattern in patterns:
+            ports.extend(glob.glob(pattern))
+        
+        if ports:
+            self.log_message(f"Found ports using glob: {', '.join(ports)}")
+            return ports
+        
+        self.log_message("No serial ports found.")
+        return []
+    
+    def try_connect_arduino(self):
+        """Try to connect to Arduino on available serial ports"""
+        ports = self.scan_serial_ports()
+        
         if not ports:
             self.log_message("No serial ports found.")
-            return []
-        
-        # Filter for USB and ACM ports on Linux
-        if os.name == 'posix':
-            ports = [port for port in ports if ('USB' in port or 'ACM' in port)]
-            
-        self.log_message(f"Found ports: {', '.join(ports)}")
-        return ports
-    
-    def try_connect_arduino_serial(self):
-        """Try to connect to Arduino via serial"""
-        # Close existing connection if any
-        if self.arduino_serial is not None:
-            try:
-                self.arduino_serial.close()
-            except Exception:
-                pass
-            self.arduino_serial = None
-        
-        # Scan for available ports
-        all_ports = self.scan_serial_ports()
-        if not all_ports:
-            self.log_message("No serial ports available")
             return False
         
-        # Try each port to find Arduino
-        sorted_ports = sorted(all_ports)
+        # Sort ports to prioritize USB0
+        ports = sorted(ports, key=lambda x: (
+            0 if 'USB0' in x else
+            1 if 'USB' in x else
+            2 if 'ACM0' in x else
+            3 if 'ACM' in x else
+            4
+        ))
         
-        for port in sorted_ports:
+        for port in ports:
+            # Try to connect
             try:
-                self.log_message(f"Trying to connect to {port}...")
+                self.log_message(f"Trying to connect to Arduino on {port}...")
+                ser = serial.Serial(port, self.BAUD_RATE, timeout=self.SERIAL_TIMEOUT)
                 
-                # Open port
-                test_ser = serial.Serial(port, self.BAUD_RATE, timeout=self.SERIAL_TIMEOUT)
-                time.sleep(2)  # Arduino resets on serial connection
-                test_ser.reset_input_buffer()
+                # Give the Arduino time to reset
+                time.sleep(2)
                 
-                # Send test request and check response
-                self.log_message("Sending test request to Arduino...")
-                test_ser.write(b'r')
+                # Send read command
+                ser.write(b'R')
                 time.sleep(0.5)
                 
-                line = test_ser.readline().decode('utf-8', errors='ignore').strip()
-                self.log_message(f"Received from {port}: '{line}'")
+                # Read response
+                response = ser.readline().decode().strip()
+                self.log_message(f"Received from {port}: '{response}'")
                 
-                # Validate response - expecting comma-separated values
-                if ',' in line:
-                    values = line.split(',')
-                    if len(values) >= 4:  # At least 4 values for gas sensors
-                        self.log_message(f"Arduino found on {port}")
-                        self.arduino_serial = test_ser
+                if response and ',' in response:
+                    values = response.split(',')
+                    if len(values) == 4:  # Expect 4 sensor values
+                        self.arduino_serial = ser
+                        self.log_message(f"Successfully connected to Arduino on {port}")
                         return True
                 
-                # Not the right device, close it
-                self.log_message(f"Device on {port} is not compatible, closing connection")
-                test_ser.close()
+                ser.close()
+                self.log_message(f"Invalid response from device on {port}")
                 
             except Exception as e:
-                self.log_message(f"Failed to connect to {port}: {e}")
+                self.log_message(f"Connection error on {port}: {e}")
         
-        self.log_message("No working Arduino connection found.")
+        self.log_message("Could not find Arduino on any port")
         return False
     
     def cleanup_hardware(self):
         if self.h:
             try:
-                # Turn off relays
-                lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 1)  # Fan off (active-low)
-                lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 1)  # Freshener off (active-low)
+                # Turn off devices
+                lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 1)  # Fan off (HIGH = OFF)
+                lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 1)  # Freshener off (HIGH = OFF)
                 
-                # Cleanup GPIO
+                # Free GPIO resources
                 lgpio.gpio_free(self.h, self.FAN_RELAY_PIN)
                 lgpio.gpio_free(self.h, self.FRESHENER_RELAY_PIN)
                 lgpio.gpio_free(self.h, self.SENSOR_PIN)
                 lgpio.gpiochip_close(self.h)
                 self.h = None
-                
-                # Cleanup DHT devices
-                if self.dht_devices:
-                    for dht in self.dht_devices:
-                        if dht:
-                            dht.exit()
-                
-                # Close Arduino serial if open
-                if self.arduino_serial:
-                    self.arduino_serial.close()
-                    self.arduino_serial = None
-                    
-                self.log_message("Odor hardware resources cleaned up")
+                self.log_message("GPIO resources cleaned up")
             except Exception as e:
-                self.log_message(f"Error cleaning up odor hardware: {e}")
-    
-    def read_gas_sensors(self):
-        """Read data from MQ135 gas sensors via I2C or Serial"""
-        # Try I2C first
-        if self.bus:
-            for attempt in range(3):  # Retry I2C up to 3 times
-                try:
-                    data = self.bus.read_i2c_block_data(self.ARDUINO_ADDRESS, 0, 8)
-                    if len(data) >= 8:
-                        gas_values = []
-                        for i in range(4):
-                            # Combine MSB and LSB for each sensor
-                            gas_value = (data[i*2] << 8) + data[i*2 + 1]
-                            gas_values.append(gas_value)
-                            self.sensor_data[f"sensor_{i+1}"]["gas_status"] = "UP"
-                        return gas_values
-                except Exception as e:
-                    self.log_message(f"I2C read error (attempt {attempt+1}): {e}")
-                    time.sleep(0.1)
+                self.log_message(f"Error cleaning up GPIO: {e}")
         
-        # If I2C failed, try serial
+        # Close Arduino connection
         if self.arduino_serial:
             try:
-                # Clear input buffer
-                self.arduino_serial.reset_input_buffer()
-                
-                # Send request to Arduino
-                self.arduino_serial.write(b'r')
-                time.sleep(0.5)
-                
-                # Read response
-                line = self.arduino_serial.readline().decode('utf-8', errors='ignore').strip()
-                
-                if ',' in line:
-                    values = [int(val.strip()) for val in line.split(',')]
-                    if len(values) >= 4:
-                        for i in range(4):
-                            self.sensor_data[f"sensor_{i+1}"]["gas_status"] = "UP"
-                        return values[:4]  # Use first 4 values
-                
-                self.log_message(f"Invalid serial reading format: {line}")
-            except Exception as e:
-                self.log_message(f"Serial read error: {e}")
-                # Try to reconnect next time
-                if self.arduino_serial:
-                    try:
-                        self.arduino_serial.close()
-                    except:
-                        pass
-                    self.arduino_serial = None
+                self.arduino_serial.close()
+                self.log_message("Closed Arduino serial connection")
+            except Exception:
+                pass
+            self.arduino_serial = None
         
-        # If both methods failed, use simulated data and mark sensors as DOWN
-        self.log_message("Using simulated gas sensor data")
-        for i in range(4):
-            self.sensor_data[f"sensor_{i+1}"]["gas_status"] = "DOWN"
-            
-        return [random.randint(50, 500) for _ in range(4)]
-    
-    def read_sensors(self):
-        """Simulate temperature, humidity and AQI readings"""
-        temp = [0] * 4
-        hum = [0] * 4
-        aqi = self.read_gas_sensors()
-        
-        # Read DHT22 sensors
-        for i, dht in enumerate(self.dht_devices or []):
-            if dht:
+        # Clean up DHT sensors
+        for sensor in self.dht_devices:
+            if sensor:
                 try:
-                    t = dht.temperature
-                    h = dht.humidity
-                    if t is not None and h is not None and -40 <= t <= 80 and 0 <= h <= 100:
-                        temp[i] = t
-                        hum[i] = h
-                        self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "UP"
-                    else:
-                        # Simulate data for invalid readings
-                        temp[i] = random.uniform(20, 35)
-                        hum[i] = random.uniform(40, 80)
-                        self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "DOWN"
-                except Exception as e:
-                    # Simulate data on error
-                    temp[i] = random.uniform(20, 35)
-                    hum[i] = random.uniform(40, 80)
-                    self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "DOWN"
-            else:
-                # Simulate data for missing sensors
-                temp[i] = random.uniform(20, 35)
-                hum[i] = random.uniform(40, 80)
-                self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "DOWN"
-        
-        # Update sensor data
-        for i in range(4):
-            self.sensor_data[f"sensor_{i+1}"]["temperature"] = temp[i]
-            self.sensor_data[f"sensor_{i+1}"]["humidity"] = hum[i]
-            self.sensor_data[f"sensor_{i+1}"]["aqi"] = aqi[i]
-        
-        return temp, hum, aqi
+                    sensor.exit()
+                except Exception:
+                    pass
+        self.dht_devices = []
     
-    def check_occupancy(self):
-        """Check occupancy status using E18-D80NK sensor"""
-        if not self.h:
-            return False
+    def read_gas_sensors(self):
+        """Read data from MQ135 gas sensors via Arduino"""
+        if not self.arduino_serial:
+            # Simulated data
+            self.log_message("Using simulated gas sensor data")
+            return [random.randint(100, 300) for _ in range(4)]
         
-        current_sensor_state = lgpio.gpio_read(self.h, self.SENSOR_PIN)
-        current_time = time.time()
-        
-        if current_sensor_state != self.last_sensor_state and current_time - self.last_time > 1.0:
-            if current_sensor_state == 0:  # LOW = Occupied
-                self.is_occupied = True
-                self.log_message("Occupancy detected")
-            else:  # HIGH = Vacant
-                self.is_occupied = False
-                self.last_exit_time = current_time  # Record exit time
-                self.log_message("Space vacated")
-            self.last_sensor_state = current_sensor_state
-            self.last_time = current_time
-            return not self.is_occupied  # True if just vacated
-        return False
-    
-    def buffer_sensor_data(self, gas_values, temp_readings):
-        """Add sensor data to buffer for averaging"""
-        self.sensor_data_buffer.append({
-            "gas": gas_values,
-            "temp": [{
-                "temp": temp_readings[i]["temp"],
-                "hum": temp_readings[i]["hum"]
-            } for i in range(len(temp_readings))]
-        })
-        
-        # Keep buffer size reasonable
-        if len(self.sensor_data_buffer) > 10:
-            self.sensor_data_buffer.pop(0)
-    
-    def calculate_average_from_buffer(self):
-        """Calculate average values from buffered sensor data"""
-        if not self.sensor_data_buffer:
-            return None
-        
-        # Initialize with zeros
-        avg_gas = [0, 0, 0, 0]
-        avg_temp = [
-            {"temp": 0.0, "hum": 0.0},
-            {"temp": 0.0, "hum": 0.0},
-            {"temp": 0.0, "hum": 0.0},
-            {"temp": 0.0, "hum": 0.0}
-        ]
-        
-        # Sum all values
-        for data in self.sensor_data_buffer:
-            # Sum gas values
-            for i in range(4):
-                if i < len(data["gas"]):
-                    avg_gas[i] += data["gas"][i]
+        try:
+            # Reset input buffer to clear any stale data
+            self.arduino_serial.reset_input_buffer()
             
-            # Sum temperature and humidity
-            for i in range(4):
-                if i < len(data["temp"]):
-                    avg_temp[i]["temp"] += data["temp"][i]["temp"]
-                    avg_temp[i]["hum"] += data["temp"][i]["hum"]
+            # Send read command
+            self.arduino_serial.write(b'R')
+            time.sleep(0.2)
+            
+            # Read response
+            response = self.arduino_serial.readline().decode().strip()
+            
+            if not response:
+                raise Exception("No response from Arduino")
+            
+            # Parse values
+            values = []
+            for val in response.split(','):
+                try:
+                    value = int(val)
+                    # Validate range (0-500 is valid range for MQ135)
+                    if 0 <= value <= 500:
+                        values.append(value)
+                    else:
+                        values.append(random.randint(100, 300))  # Use random if out of range
+                except ValueError:
+                    values.append(random.randint(100, 300))  # Use random if parsing fails
+            
+            # Ensure we have 4 values
+            while len(values) < 4:
+                values.append(random.randint(100, 300))
+            
+            return values[:4]  # Return only first 4 values
+            
+        except Exception as e:
+            self.log_message(f"Error reading gas sensors: {e}")
+            
+            # Attempt to reconnect on error
+            if "device disconnected" in str(e).lower() or "port is closed" in str(e).lower():
+                self.log_message("Attempting to reconnect to Arduino...")
+                self.arduino_serial = None
+                if self.try_connect_arduino():
+                    self.log_message("Successfully reconnected to Arduino")
+                    return self.read_gas_sensors()  # Try reading again
+            
+            # Return simulated data on failure
+            return [random.randint(100, 300) for _ in range(4)]
+    
+    def read_temp_sensors(self):
+        """Read data from DHT22 temperature sensors"""
+        readings = []
         
-        # Calculate averages
-        buffer_len = len(self.sensor_data_buffer)
-        for i in range(4):
-            avg_gas[i] = round(avg_gas[i] / buffer_len)
-            avg_temp[i]["temp"] = round(avg_temp[i]["temp"] / buffer_len, self.DECIMAL_PRECISION)
-            avg_temp[i]["hum"] = round(avg_temp[i]["hum"] / buffer_len, self.DECIMAL_PRECISION)
+        # Try to read each sensor
+        for i, sensor in enumerate(self.dht_devices):
+            retry_count = 3
+            valid_reading = False
+            temp = None
+            hum = None
+            
+            if sensor:
+                # Try multiple times before giving up
+                for attempt in range(retry_count):
+                    try:
+                        # DHT sensors need time between readings
+                        time.sleep(0.2)
+                        
+                        temp = sensor.temperature
+                        hum = sensor.humidity
+                        
+                        # Validate readings
+                        if (temp is not None and hum is not None and
+                            -40 <= temp <= 80 and 0 <= hum <= 100):
+                            valid_reading = True
+                            self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "UP"
+                            break
+                    except Exception as e:
+                        if attempt == retry_count - 1:  # Only log on final attempt
+                            self.log_message(f"DHT sensor {i+1} error: {e}")
+                        time.sleep(0.5)  # Wait before retry
+            
+            if valid_reading:
+                readings.append({
+                    "temp": round(temp, self.DECIMAL_PRECISION),
+                    "hum": round(hum, self.DECIMAL_PRECISION)
+                })
+                
+                # Update sensor data tracking
+                self.sensor_data[f"sensor_{i+1}"]["temperature"] = round(temp, self.DECIMAL_PRECISION)
+                self.sensor_data[f"sensor_{i+1}"]["humidity"] = round(hum, self.DECIMAL_PRECISION)
+            else:
+                # Use simulated data for invalid readings
+                sim_temp = round(random.uniform(20, 35), self.DECIMAL_PRECISION)
+                sim_hum = round(random.uniform(40, 80), self.DECIMAL_PRECISION)
+                
+                readings.append({
+                    "temp": sim_temp,
+                    "hum": sim_hum
+                })
+                
+                # Update sensor data tracking with simulated values
+                self.sensor_data[f"sensor_{i+1}"]["temperature"] = sim_temp
+                self.sensor_data[f"sensor_{i+1}"]["humidity"] = sim_hum
+                self.sensor_data[f"sensor_{i+1}"]["temp_status"] = "DOWN"
+                
+                self.log_message(f"DHT sensor {i+1} gave invalid reading, using simulated data")
         
-        return {"gas": avg_gas, "temp": avg_temp}
+        # If we don't have enough readings, pad with simulated data
+        while len(readings) < 4:
+            sim_temp = round(random.uniform(20, 35), self.DECIMAL_PRECISION)
+            sim_hum = round(random.uniform(40, 80), self.DECIMAL_PRECISION)
+            
+            readings.append({
+                "temp": sim_temp,
+                "hum": sim_hum
+            })
+            
+            idx = len(readings) - 1
+            if idx < 4:
+                self.sensor_data[f"sensor_{idx+1}"]["temperature"] = sim_temp
+                self.sensor_data[f"sensor_{idx+1}"]["humidity"] = sim_hum
+                self.sensor_data[f"sensor_{idx+1}"]["temp_status"] = "DOWN"
+        
+        return readings
     
     def fix_sensor_data(self, gas_values, temp_readings):
         """Handle sensor failures by averaging values from working sensors"""
@@ -1541,126 +1574,176 @@ class OdorModule(ModuleBase):
                     self.log_message(f"Fixed GAS{i+1} with average {round(avg_gas)}")
         
         # Fix temperature values
-        valid_temps = [r["temperature"] for r in temp_readings if r["temperature"] > 0]
-        valid_hums = [r["humidity"] for r in temp_readings if r["humidity"] > 0]
+        valid_temps = [r["temp"] for r in temp_readings if r["temp"] > 0]
+        valid_hums = [r["hum"] for r in temp_readings if r["hum"] > 0]
         
         if valid_temps:
             avg_temp = sum(valid_temps) / len(valid_temps)
             for i in range(len(fixed_temp)):
-                if fixed_temp[i]["temperature"] <= 0:
-                    fixed_temp[i]["temperature"] = round(avg_temp, self.DECIMAL_PRECISION)
+                if fixed_temp[i]["temp"] <= 0:
+                    fixed_temp[i]["temp"] = round(avg_temp, self.DECIMAL_PRECISION)
                     self.log_message(f"Fixed TEMP{i+1} temperature with average {round(avg_temp, self.DECIMAL_PRECISION)}")
         
         if valid_hums:
             avg_hum = sum(valid_hums) / len(valid_hums)
             for i in range(len(fixed_temp)):
-                if fixed_temp[i]["humidity"] <= 0:
-                    fixed_temp[i]["humidity"] = round(avg_hum, self.DECIMAL_PRECISION)
+                if fixed_temp[i]["hum"] <= 0:
+                    fixed_temp[i]["hum"] = round(avg_hum, self.DECIMAL_PRECISION)
                     self.log_message(f"Fixed TEMP{i+1} humidity with average {round(avg_hum, self.DECIMAL_PRECISION)}")
         
         return fixed_gas, fixed_temp
     
-    def calculate_avg_aqi(self, aqi):
-        """Calculate average AQI and update history for trend analysis"""
-        avg_aqi = sum(aqi) / len(aqi) if aqi and all(a != 0 for a in aqi) else 0
-        self.aqi_history.append(avg_aqi)
-        if len(self.aqi_history) > 10:  # Keep last 10 readings
-            self.aqi_history.pop(0)
-        return avg_aqi
-    
-    def calculate_air_quality_trend(self):
-        """Calculate AQI trend (increasing, decreasing, stable)"""
-        if len(self.aqi_history) < 2:
-            return "unknown"
-            
-        # Use the last 3 readings to determine trend if available
-        if len(self.aqi_history) >= 3:
-            recent = self.aqi_history[-3:]
-            
-            # Calculate moving average to smooth out noise
-            if all(a > 0 for a in recent):
-                # Check if consistently increasing or decreasing
-                if recent[0] < recent[1] < recent[2] and (recent[2] - recent[0]) > 10:
-                    return "increasing"
-                elif recent[0] > recent[1] > recent[2] and (recent[0] - recent[2]) > 10:
-                    return "decreasing"
-        
-        # Fallback to simple difference if fewer readings
-        diff = self.aqi_history[-1] - self.aqi_history[0]
-        if abs(diff) < 5:
-            return "stable"
-        return "increasing" if diff > 0 else "decreasing"
-    
-    def control_fan(self, avg_aqi, avg_temp, avg_hum):
-        """Control exhaust fan based on AQI, temperature, humidity, and occupancy"""
+    def check_occupancy(self):
+        """Check occupancy status using E18-D80NK sensor"""
         if not self.h:
-            return
+            return False
         
-        should_run = False
-        reason = ""
+        just_vacated = False
+        current_sensor_state = lgpio.gpio_read(self.h, self.SENSOR_PIN)
+        current_time = time.time()
         
-        if self.is_occupied:  # Presence trigger
-            should_run = True
-            reason = "occupancy"
-        elif time.time() - self.last_exit_time < self.FAN_POST_EXIT_DURATION:  # Post-exit
-            should_run = True
-            reason = "post-exit cycle"
-        elif avg_aqi > 300:  # Primary AQI trigger
-            should_run = True
-            reason = "high AQI"
-        elif avg_aqi > 100 and avg_temp > 25:  # AQI and temperature trigger
-            should_run = True
-            reason = "elevated AQI and temperature"
-        elif avg_aqi > 150 and avg_temp > 30:  # Severe AQI and temperature
-            should_run = True
-            reason = "critical AQI and temperature"
-        elif avg_hum > 60 and avg_aqi > 100:  # Humidity amplifies odor
-            should_run = True
-            reason = "high humidity with odor"
+        # If sensor state changed, handle debouncing
+        if current_sensor_state != self.last_sensor_state:
+            # Wait for sensor to stabilize (debounce)
+            time.sleep(0.1)
+            current_sensor_state = lgpio.gpio_read(self.h, self.SENSOR_PIN)
+            
+            # If the reading is still different, it's a real change
+            if current_sensor_state != self.last_sensor_state:
+                self.last_sensor_state = current_sensor_state
+                
+                # Update occupancy state (LOW = detected object, HIGH = no detection with pull-up)
+                if current_sensor_state == 0:  # Object detected
+                    if not self.is_occupied:
+                        self.is_occupied = True
+                        self.log_message("Visitor entered")
+                        # Turn on fan when someone enters
+                        self.toggle_fan(True)
+                else:  # No object detected
+                    if self.is_occupied:
+                        self.is_occupied = False
+                        self.last_exit_time = current_time
+                        self.log_message("Visitor exited")
+                        # Trigger air freshener when someone exits
+                        self.trigger_air_freshener()
+                        just_vacated = True
         
-        if should_run and not self.fan_status:
-            lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 0)  # LOW to activate (active-low)
-            self.fan_status = True
-            self.log_message(f"Fan activated: {reason}")
-        elif not should_run and self.fan_status:
-            lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 1)  # HIGH to deactivate
-            self.fan_status = False
-            self.log_message("Fan deactivated")
+        return just_vacated
     
-    def control_freshener(self, avg_aqi, vacated, avg_temp=25):
-        """Control air freshener based on AQI, vacancy, or timer"""
-        if not self.h:
-            return
+    def toggle_fan(self, state):
+        """Toggle exhaust fan on or off (active-low: LOW = ON, HIGH = OFF)"""
+        if self.h is None:
+            self.log_message("Error: GPIO not initialized for fan")
+            return False
         
-        should_spray = False
-        reason = ""
+        try:
+            # Set GPIO pin: LOW (0) to activate, HIGH (1) to deactivate
+            lgpio.gpio_write(self.h, self.FAN_RELAY_PIN, 0 if state else 1)
+            self.fan_status = state
+            self.log_message(f"Exhaust Fan {'ON' if state else 'OFF'}")
+            return True
+        except Exception as e:
+            self.log_message(f"Error toggling exhaust fan: {e}")
+            return False
+    
+    def trigger_air_freshener(self):
+        """Trigger air freshener with a 500ms pulse"""
+        if self.h is None:
+            self.log_message("Error: GPIO not initialized for freshener")
+            return False
         
-        if avg_aqi > 300 and not self.freshener_triggered:
-            should_spray = True
-            reason = "high AQI"
-        elif vacated and not self.freshener_triggered:
-            should_spray = True
-            reason = "space vacated"
-        elif time.time() - self.last_spray_time >= 2160 and not self.freshener_triggered:  # 36 minutes
-            should_spray = True
-            reason = "scheduled interval"
-        elif avg_aqi > 150 and avg_temp > 30 and not self.freshener_triggered:  # Additional trigger for high temp
-            should_spray = True
-            reason = "critical conditions"
-        
-        if should_spray:
-            lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 0)  # LOW to activate (active-low)
+        try:
+            self.log_message("Triggering air freshener (500ms pulse)...")
+            lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 0)  # LOW to activate
             time.sleep(0.5)  # 500ms pulse
             lgpio.gpio_write(self.h, self.FRESHENER_RELAY_PIN, 1)  # HIGH to deactivate
             self.freshener_triggered = True
-            self.last_spray_time = time.time()
-            self.log_message(f"Air freshener activated: {reason}")
-        elif avg_aqi <= 300 and not vacated:
-            self.freshener_triggered = False
+            self.log_message("Air freshener triggered successfully")
+            return True
+        except Exception as e:
+            self.log_message(f"Error triggering air freshener: {e}")
+            return False
+    
+    def update_devices(self):
+        """Update device states based on occupancy"""
+        current_time = time.time()
+        
+        # Update fan status - turn off after delay when vacant
+        if not self.is_occupied and self.fan_status:
+            if current_time - self.last_exit_time > self.FAN_POST_EXIT_DURATION:
+                self.toggle_fan(False)
+                self.log_message(f"Exhaust fan turned off after {self.FAN_POST_EXIT_DURATION} seconds of vacancy")
+    
+    def buffer_sensor_data(self, gas_values, temp_readings):
+        """Add sensor data to buffer for averaging"""
+        self.sensor_data_buffer.append({
+            "gas": gas_values,
+            "temp": temp_readings,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+        
+        # Keep buffer size reasonable to cover the full 2-minute interval
+        # 24 entries = 2 minutes (at 5 second intervals)
+        max_buffer_size = 24
+        if len(self.sensor_data_buffer) > max_buffer_size:
+            # Remove oldest entries
+            self.sensor_data_buffer = self.sensor_data_buffer[-max_buffer_size:]
+    
+    def calculate_average_from_buffer(self):
+        """Calculate average values from buffered sensor data"""
+        if not self.sensor_data_buffer:
+            return None
+        
+        # Initialize with zeros
+        avg_gas = [0, 0, 0, 0]
+        avg_temp = [
+            {"temp": 0.0, "hum": 0.0},
+            {"temp": 0.0, "hum": 0.0},
+            {"temp": 0.0, "hum": 0.0},
+            {"temp": 0.0, "hum": 0.0}
+        ]
+        
+        # Log how many data points are being averaged
+        self.log_message(f"Calculating averages from {len(self.sensor_data_buffer)} data points")
+        
+        # Sum all values
+        for data in self.sensor_data_buffer:
+            # Sum gas values
+            for i in range(4):
+                avg_gas[i] += data["gas"][i]
+            
+            # Sum temperature and humidity
+            for i in range(4):
+                avg_temp[i]["temp"] += data["temp"][i]["temp"]
+                avg_temp[i]["hum"] += data["temp"][i]["hum"]
+        
+        # Calculate averages
+        buffer_len = len(self.sensor_data_buffer)
+        for i in range(4):
+            avg_gas[i] = round(avg_gas[i] / buffer_len)
+            avg_temp[i]["temp"] = round(avg_temp[i]["temp"] / buffer_len, self.DECIMAL_PRECISION)
+            avg_temp[i]["hum"] = round(avg_temp[i]["hum"] / buffer_len, self.DECIMAL_PRECISION)
+            
+            # Update sensor data
+            self.sensor_data[f"sensor_{i+1}"]["aqi"] = avg_gas[i]
+        
+        return {"gas": avg_gas, "temp": avg_temp}
+    
+    def log_sensor_data(self, gas_values, temp_readings):
+        """Log all sensor data"""
+        gas_str = f"ODOR [GAS1: {gas_values[0]} | GAS2: {gas_values[1]} | GAS3: {gas_values[2]} | GAS4: {gas_values[3]}]"
+        temp_str = f"TEMP ["
+        
+        for i, reading in enumerate(temp_readings):
+            temp_str += f"TEMP{i+1}: {reading['temp']}°C | "
+        temp_str = temp_str.rstrip(" | ") + "]"
+        
+        self.log_message(f"{gas_str} {temp_str}")
     
     def save_to_local_storage(self, data):
         """Save data to local JSON file"""
         try:
+            # Ensure the directory exists
             os.makedirs(os.path.dirname(self.JSON_FILE), exist_ok=True)
             
             existing_data = []
@@ -1711,7 +1794,7 @@ class OdorModule(ModuleBase):
         """Save sensor data to database(s)"""
         # Create data document
         data = {
-            "_id": str(ObjectId()) if 'ObjectId' in globals() else "local_" + datetime.now().strftime("%Y%m%d%H%M%S"),
+            "_id": str(ObjectId()) if 'ObjectId' in globals() else f"local_{datetime.now().strftime('%Y%m%d%H%M%S')}",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "aqi": {
                 "GAS1": gas_values[0],
@@ -1724,23 +1807,8 @@ class OdorModule(ModuleBase):
                 "TEMP2": {"temp": temp_readings[1]["temp"], "hum": temp_readings[1]["hum"]},
                 "TEMP3": {"temp": temp_readings[2]["temp"], "hum": temp_readings[2]["hum"]},
                 "TEMP4": {"temp": temp_readings[3]["temp"], "hum": temp_readings[3]["hum"]}
-            },
-            "fan_status": "on" if self.fan_status else "off",
-            "air_freshener_status": "triggered" if self.freshener_triggered else "off",
-            "occupancy_status": "occupied" if self.is_occupied else "vacant",
+            }
         }
-        
-        # Calculate averages
-        avg_temp = sum(r["temp"] for r in temp_readings) / 4
-        avg_hum = sum(r["hum"] for r in temp_readings) / 4
-        avg_aqi = sum(gas_values) / 4
-        
-        # Add calculated fields
-        data["average_temperature"] = round(avg_temp, self.DECIMAL_PRECISION)
-        data["average_humidity"] = round(avg_hum, self.DECIMAL_PRECISION)
-        data["average_gas_level"] = round(avg_aqi, 1)
-        data["air_quality_trend"] = self.calculate_air_quality_trend()
-        data["critical_event"] = avg_aqi > 300
         
         # Save to local storage first
         local_saved = self.save_to_local_storage(data)
@@ -1756,24 +1824,54 @@ class OdorModule(ModuleBase):
         else:
             self.log_message("Status: FAILED TO SAVE DATA")
         
+        fan_status_str = "on" if self.fan_status else "off"
+        freshener_status_str = "triggered" if self.freshener_triggered else "off"
+        occupancy_status_str = "occupied" if self.is_occupied else "vacant"
+        self.log_message(f"Fan: {fan_status_str} | Freshener: {freshener_status_str} | Occupancy: {occupancy_status_str}")
+        
         return local_saved or mongo_saved
     
     def get_sensor_summary(self):
         """Return summary data for display"""
         # Calculate averages
-        avg_temp = sum(self.sensor_data[f"sensor_{i+1}"]["temperature"] for i in range(4)) / 4
-        avg_hum = sum(self.sensor_data[f"sensor_{i+1}"]["humidity"] for i in range(4)) / 4
-        avg_aqi = sum(self.sensor_data[f"sensor_{i+1}"]["aqi"] for i in range(4)) / 4
+        avg_temp = 0
+        avg_hum = 0
+        avg_aqi = 0
+        valid_count = 0
+        
+        for i in range(4):
+            if self.sensor_data[f"sensor_{i+1}"]["temp_status"] == "UP":
+                avg_temp += self.sensor_data[f"sensor_{i+1}"]["temperature"]
+                avg_hum += self.sensor_data[f"sensor_{i+1}"]["humidity"]
+                valid_count += 1
+                
+        if valid_count > 0:
+            avg_temp /= valid_count
+            avg_hum /= valid_count
+        
+        # Average AQI
+        valid_aqi = 0
+        aqi_count = 0
+        for i in range(4):
+            if self.sensor_data[f"sensor_{i+1}"]["gas_status"] == "UP":
+                valid_aqi += self.sensor_data[f"sensor_{i+1}"]["aqi"]
+                aqi_count += 1
+        
+        if aqi_count > 0:
+            avg_aqi = valid_aqi / aqi_count
+        
+        # Calculate trend (simplified since we don't have persistent history)
+        trend = "stable"
         
         return {
             "sensors": self.sensor_data,
-            "avg_temp": avg_temp,
-            "avg_hum": avg_hum,
-            "avg_aqi": avg_aqi,
-            "fan_status": "ON" if self.fan_status else "OFF",
-            "freshener_status": "TRIGGERED" if self.freshener_triggered else "STANDBY",
+            "avg_temp": round(avg_temp, 1),
+            "avg_hum": round(avg_hum, 1),
+            "avg_aqi": round(avg_aqi, 1),
             "occupancy": "OCCUPIED" if self.is_occupied else "VACANT",
-            "trend": self.calculate_air_quality_trend(),
+            "trend": trend,
+            "fan_status": "ON" if self.fan_status else "OFF",
+            "freshener_status": "TRIGGERED" if self.freshener_triggered else "OFF",
             "log_messages": list(self.log_queue)
         }
     
@@ -1795,6 +1893,8 @@ class OdorModule(ModuleBase):
         
         last_log_time = time.time()
         last_save_time = time.time()
+        last_device_update_time = time.time()
+        last_occupancy_check_time = time.time()
         
         # Main loop
         while self.running and not self.stop_event.is_set():
@@ -1802,44 +1902,34 @@ class OdorModule(ModuleBase):
                 try:
                     current_time = time.time()
                     
-                    # Read sensors every 5 seconds
+                    # Check occupancy every second
+                    if current_time - last_occupancy_check_time >= 1:
+                        self.check_occupancy()
+                        last_occupancy_check_time = current_time
+                    
+                    # Update device states every second
+                    if current_time - last_device_update_time >= 1:
+                        self.update_devices()
+                        last_device_update_time = current_time
+                    
+                    # Read sensor data every 5 seconds
                     if current_time - last_log_time >= 5:
                         # Read sensors
-                        temp_readings, hum_readings, gas_values = self.read_sensors()
-                        
-                        # Format sensor readings for buffer
-                        temp_data = []
-                        for i in range(4):
-                            temp_data.append({
-                                "temp": temp_readings[i],
-                                "hum": hum_readings[i]
-                            })
+                        gas_values = self.read_gas_sensors()
+                        temp_readings = self.read_temp_sensors()
                         
                         # Fix any invalid sensor data
-                        gas_values, temp_data = self.fix_sensor_data(gas_values, [
-                            {"temperature": temp_readings[i], "humidity": hum_readings[i]} 
-                            for i in range(4)
-                        ])
+                        gas_values, temp_readings = self.fix_sensor_data(gas_values, temp_readings)
                         
                         # Buffer the data for averaging
-                        self.buffer_sensor_data(gas_values, temp_data)
-                        
-                        # Calculate average AQI for trend analysis
-                        avg_aqi = self.calculate_avg_aqi(gas_values)
-                        
-                        # Calculate averages for control decisions
-                        avg_temp = sum(temp_readings) / len(temp_readings)
-                        avg_hum = sum(hum_readings) / len(hum_readings)
-                        
-                        # Process occupancy and control devices
-                        vacated = self.check_occupancy()
-                        self.control_fan(avg_aqi, avg_temp, avg_hum)
-                        self.control_freshener(avg_aqi, vacated, avg_temp)
+                        self.buffer_sensor_data(gas_values, temp_readings)
                         
                         # Log current readings
-                        self.log_message(f"AQI: {gas_values[0]}/{gas_values[1]}/{gas_values[2]}/{gas_values[3]} | " +
-                                        f"Temp: {avg_temp:.1f}°C | Hum: {avg_hum:.1f}% | " +
-                                        f"Fan: {self.fan_status} | AQI Trend: {self.calculate_air_quality_trend()}")
+                        self.log_sensor_data(gas_values, temp_readings)
+                        
+                        # Show time remaining until next database save
+                        time_until_save = int(self.LOGGING_INTERVAL - (current_time - last_save_time))
+                        self.log_message(f"Next database save in {time_until_save} seconds.")
                         
                         last_log_time = current_time
                     
@@ -1857,7 +1947,7 @@ class OdorModule(ModuleBase):
                 except Exception as e:
                     self.log_message(f"Error in odor module: {e}")
                 
-                time.sleep(1)  # Check every second
+                time.sleep(0.1)  # Small delay to prevent CPU overuse
             else:
                 time.sleep(1)  # Check for un-pause every second
         
@@ -2241,8 +2331,9 @@ class SmartRestroomCLI:
                 print(f"Average Humidity    : {odor_data['avg_hum']:.1f}%")
                 print(f"Average AQI         : {odor_data['avg_aqi']:.1f}")
                 print(f"AQI Trend          : {odor_data['trend'].upper()}")
-                print(f"Fan Status         : {odor_data['fan_status']}")
-                print(f"Freshener Status   : {odor_data['freshener_status']}")
+                # Removed fan and freshener status
+                # print(f"Fan Status         : {odor_data['fan_status']}")
+                # print(f"Freshener Status   : {odor_data['freshener_status']}")
             
             print("\n" + "=" * 40)
             print("Options:")
@@ -2334,8 +2425,9 @@ class SmartRestroomCLI:
                 print(f"Average Humidity    : {data['avg_hum']:.1f}%")
                 print(f"Average AQI         : {data['avg_aqi']:.1f}")
                 print(f"AQI Trend          : {data['trend'].upper()}")
-                print(f"Fan Status         : {data['fan_status']}")
-                print(f"Freshener Status   : {data['freshener_status']}")
+                # Removed fan and freshener status
+                # print(f"Fan Status         : {data['fan_status']}")
+                # print(f"Freshener Status   : {data['freshener_status']}")
                 print(f"Occupancy Status   : {data['occupancy']}")
                 
                 # Display individual sensor readings

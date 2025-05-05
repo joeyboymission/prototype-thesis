@@ -1,0 +1,378 @@
+[
+  {
+    "_id": "6814837e118aca6844433215",
+    "type": "visit",
+    "visitor_id": 1,
+    "start_time": "2025-05-02T06:00:00.000000",
+    "end_time": "2025-05-02T06:03:03.000000",
+    "duration": 183
+  },
+  {
+    "_id": "6814837e118aca6844433216",
+    "type": "visit",
+    "visitor_id": 2,
+    "start_time": "2025-05-02T06:11:47.800000",
+    "end_time": "2025-05-02T06:20:38.800000",
+    "duration": 531
+  },
+  {
+    "_id": "6814837e118aca6844433217",
+    "type": "visit",
+    "visitor_id": 3,
+    "start_time": "2025-05-02T06:23:35.600000",
+    "end_time": "2025-05-02T06:28:53.600000",
+    "duration": 318
+  },
+  {
+    "_id": "6814837e118aca6844433218",
+    "type": "visit",
+    "visitor_id": 4,
+    "start_time": "2025-05-02T06:35:23.400000",
+    "end_time": "2025-05-02T06:38:26.400000",
+    "duration": 183
+  },
+  {
+    "_id": "6814837e118aca6844433219",
+    "type": "visit",
+    "visitor_id": 5,
+    "start_time": "2025-05-02T06:47:11.200000",
+    "end_time": "2025-05-02T06:55:21.200000",
+    "duration": 490
+  },
+  {
+    "_id": "6814837e118aca684443321a",
+    "type": "visit",
+    "visitor_id": 6,
+    "start_time": "2025-05-02T06:58:59.000000",
+    "end_time": "2025-05-02T07:02:19.000000",
+    "duration": 200
+  },
+  {
+    "_id": "6814839bc961ca6ca2a82e0a",
+    "type": "visit",
+    "visitor_id": 7,
+    "start_time": "2025-05-02T07:00:00.000000",
+    "end_time": "2025-05-02T07:05:06.000000",
+    "duration": 306
+  },
+  {
+    "_id": "6814839bc961ca6ca2a82e0b",
+    "type": "visit",
+    "visitor_id": 8,
+    "start_time": "2025-05-02T07:06:33.222222",
+    "end_time": "2025-05-02T07:14:47.222222",
+    "duration": 494
+  },
+  {
+    "_id": "6814839bc961ca6ca2a82e0c",
+    "type": "visit",
+    "visitor_id": 9,
+    "start_time": "2025-05-02T07:13:06.444444",
+    "end_time": "2025-05-02T07:22:11.444444",
+    "duration": 545
+  },
+  {
+    "_id": "6814839bc961ca6ca2a82e0d",
+    "type": "visit",
+    "visitor_id": 10,
+    "start_time": "2025-05-02T07:19:39.666667",
+    "end_time": "2025-05-02T07:27:39.666667",
+    "duration": 480
+  },
+  {
+    "_id": "6814839bc961ca6ca2a82e0e",
+    "type": "visit",
+    "visitor_id": 11,
+    "start_time": "2025-05-02T07:26:12.888889",
+    "end_time": "2025-05-02T07:34:21.888889",
+    "duration": 489
+  },
+  {
+    "_id": "6814839bc961ca6ca2a82e0f",
+    "type": "visit",
+    "visitor_id": 12,
+    "start_time": "2025-05-02T07:32:46.111111",
+    "end_time": "2025-05-02T07:37:41.111111",
+    "duration": 295
+  },
+  {
+    "_id": "6814839bc961ca6ca2a82e10",
+    "type": "visit",
+    "visitor_id": 13,
+    "start_time": "2025-05-02T07:39:19.333333",
+    "end_time": "2025-05-02T07:42:59.333333",
+    "duration": 220
+  },
+  {
+    "_id": "6814839cc961ca6ca2a82e11",
+    "type": "visit",
+    "visitor_id": 14,
+    "start_time": "2025-05-02T07:45:52.555556",
+    "end_time": "2025-05-02T07:52:42.555556",
+    "duration": 410
+  },
+  {
+    "_id": "6814839cc961ca6ca2a82e12",
+    "type": "visit",
+    "visitor_id": 15,
+    "start_time": "2025-05-02T07:52:25.777778",
+    "end_time": "2025-05-02T08:01:59.777778",
+    "duration": 574
+  },
+  {
+    "_id": "6814839cc961ca6ca2a82e13",
+    "type": "visit",
+    "visitor_id": 16,
+    "start_time": "2025-05-02T07:58:59.000000",
+    "end_time": "2025-05-02T08:03:10.000000",
+    "duration": 251
+  },
+  {
+    "_id": "6814850a39418eff1240c05d",
+    "type": "visit",
+    "visitor_id": 17,
+    "start_time": "2025-05-02T08:00:00.000000",
+    "end_time": "2025-05-02T08:06:11.000000",
+    "duration": 371
+  },
+  {
+    "_id": "6814850a39418eff1240c05e",
+    "type": "visit",
+    "visitor_id": 18,
+    "start_time": "2025-05-02T08:04:12.785714",
+    "end_time": "2025-05-02T08:10:12.785714",
+    "duration": 360
+  },
+  {
+    "_id": "6814850a39418eff1240c05f",
+    "type": "visit",
+    "visitor_id": 19,
+    "start_time": "2025-05-02T08:08:25.571429",
+    "end_time": "2025-05-02T08:17:11.571429",
+    "duration": 526
+  },
+  {
+    "_id": "6814850a39418eff1240c060",
+    "type": "visit",
+    "visitor_id": 20,
+    "start_time": "2025-05-02T08:12:38.357143",
+    "end_time": "2025-05-02T08:14:43.357143",
+    "duration": 125
+  },
+  {
+    "_id": "6814850a39418eff1240c061",
+    "type": "visit",
+    "visitor_id": 21,
+    "start_time": "2025-05-02T08:16:51.142857",
+    "end_time": "2025-05-02T08:24:32.142857",
+    "duration": 461
+  },
+  {
+    "_id": "6814850a39418eff1240c062",
+    "type": "visit",
+    "visitor_id": 22,
+    "start_time": "2025-05-02T08:21:03.928571",
+    "end_time": "2025-05-02T08:25:56.928571",
+    "duration": 293
+  },
+  {
+    "_id": "6814850a39418eff1240c063",
+    "type": "visit",
+    "visitor_id": 23,
+    "start_time": "2025-05-02T08:25:16.714286",
+    "end_time": "2025-05-02T08:33:35.714286",
+    "duration": 499
+  },
+  {
+    "_id": "6814850a39418eff1240c064",
+    "type": "visit",
+    "visitor_id": 24,
+    "start_time": "2025-05-02T08:29:29.500000",
+    "end_time": "2025-05-02T08:34:33.500000",
+    "duration": 304
+  },
+  {
+    "_id": "6814850a39418eff1240c065",
+    "type": "visit",
+    "visitor_id": 25,
+    "start_time": "2025-05-02T08:33:42.285714",
+    "end_time": "2025-05-02T08:35:10.285714",
+    "duration": 88
+  },
+  {
+    "_id": "6814850a39418eff1240c066",
+    "type": "visit",
+    "visitor_id": 26,
+    "start_time": "2025-05-02T08:37:55.071429",
+    "end_time": "2025-05-02T08:45:58.071429",
+    "duration": 483
+  },
+  {
+    "_id": "6814850a39418eff1240c067",
+    "type": "visit",
+    "visitor_id": 27,
+    "start_time": "2025-05-02T08:42:07.857143",
+    "end_time": "2025-05-02T08:48:37.857143",
+    "duration": 390
+  },
+  {
+    "_id": "6814850b39418eff1240c068",
+    "type": "visit",
+    "visitor_id": 28,
+    "start_time": "2025-05-02T08:46:20.642857",
+    "end_time": "2025-05-02T08:49:10.642857",
+    "duration": 170
+  },
+  {
+    "_id": "6814850b39418eff1240c069",
+    "type": "visit",
+    "visitor_id": 29,
+    "start_time": "2025-05-02T08:50:33.428571",
+    "end_time": "2025-05-02T09:00:16.428571",
+    "duration": 583
+  },
+  {
+    "_id": "6814850b39418eff1240c06a",
+    "type": "visit",
+    "visitor_id": 30,
+    "start_time": "2025-05-02T08:54:46.214286",
+    "end_time": "2025-05-02T08:57:27.214286",
+    "duration": 161
+  },
+  {
+    "_id": "6814850b39418eff1240c06b",
+    "type": "visit",
+    "visitor_id": 31,
+    "start_time": "2025-05-02T08:58:59.000000",
+    "end_time": "2025-05-02T09:06:17.000000",
+    "duration": 438
+  },
+  {
+    "_id": "681485c148ac5b7f6f42b4b4",
+    "type": "visit",
+    "visitor_id": 32,
+    "start_time": "2025-05-02T16:00:00.000000",
+    "end_time": "2025-05-02T16:06:25.000000",
+    "duration": 385
+  },
+  {
+    "_id": "681485c148ac5b7f6f42b4b5",
+    "type": "visit",
+    "visitor_id": 33,
+    "start_time": "2025-05-02T16:03:55.933333",
+    "end_time": "2025-05-02T16:06:05.933333",
+    "duration": 130
+  },
+  {
+    "_id": "681485c148ac5b7f6f42b4b6",
+    "type": "visit",
+    "visitor_id": 34,
+    "start_time": "2025-05-02T16:07:51.866667",
+    "end_time": "2025-05-02T16:15:13.866667",
+    "duration": 442
+  },
+  {
+    "_id": "681485c148ac5b7f6f42b4b7",
+    "type": "visit",
+    "visitor_id": 35,
+    "start_time": "2025-05-02T16:11:47.800000",
+    "end_time": "2025-05-02T16:21:12.800000",
+    "duration": 565
+  },
+  {
+    "_id": "681485c148ac5b7f6f42b4b8",
+    "type": "visit",
+    "visitor_id": 36,
+    "start_time": "2025-05-02T16:15:43.733333",
+    "end_time": "2025-05-02T16:19:56.733333",
+    "duration": 253
+  },
+  {
+    "_id": "681485c148ac5b7f6f42b4b9",
+    "type": "visit",
+    "visitor_id": 37,
+    "start_time": "2025-05-02T16:19:39.666667",
+    "end_time": "2025-05-02T16:21:00.666667",
+    "duration": 81
+  },
+  {
+    "_id": "681485c148ac5b7f6f42b4ba",
+    "type": "visit",
+    "visitor_id": 38,
+    "start_time": "2025-05-02T16:23:35.600000",
+    "end_time": "2025-05-02T16:28:39.600000",
+    "duration": 304
+  },
+  {
+    "_id": "681485c148ac5b7f6f42b4bb",
+    "type": "visit",
+    "visitor_id": 39,
+    "start_time": "2025-05-02T16:27:31.533333",
+    "end_time": "2025-05-02T16:32:21.533333",
+    "duration": 290
+  },
+  {
+    "_id": "681485c148ac5b7f6f42b4bc",
+    "type": "visit",
+    "visitor_id": 40,
+    "start_time": "2025-05-02T16:31:27.466667",
+    "end_time": "2025-05-02T16:33:09.466667",
+    "duration": 102
+  },
+  {
+    "_id": "681485c248ac5b7f6f42b4bd",
+    "type": "visit",
+    "visitor_id": 41,
+    "start_time": "2025-05-02T16:35:23.400000",
+    "end_time": "2025-05-02T16:43:03.400000",
+    "duration": 460
+  },
+  {
+    "_id": "681485c248ac5b7f6f42b4be",
+    "type": "visit",
+    "visitor_id": 42,
+    "start_time": "2025-05-02T16:39:19.333333",
+    "end_time": "2025-05-02T16:41:01.333333",
+    "duration": 102
+  },
+  {
+    "_id": "681485c248ac5b7f6f42b4bf",
+    "type": "visit",
+    "visitor_id": 43,
+    "start_time": "2025-05-02T16:43:15.266667",
+    "end_time": "2025-05-02T16:49:08.266667",
+    "duration": 353
+  },
+  {
+    "_id": "681485c248ac5b7f6f42b4c0",
+    "type": "visit",
+    "visitor_id": 44,
+    "start_time": "2025-05-02T16:47:11.200000",
+    "end_time": "2025-05-02T16:48:59.200000",
+    "duration": 108
+  },
+  {
+    "_id": "681485c248ac5b7f6f42b4c1",
+    "type": "visit",
+    "visitor_id": 45,
+    "start_time": "2025-05-02T16:51:07.133333",
+    "end_time": "2025-05-02T16:59:42.133333",
+    "duration": 515
+  },
+  {
+    "_id": "681485c248ac5b7f6f42b4c2",
+    "type": "visit",
+    "visitor_id": 46,
+    "start_time": "2025-05-02T16:55:03.066667",
+    "end_time": "2025-05-02T17:03:03.066667",
+    "duration": 480
+  },
+  {
+    "_id": "681485c248ac5b7f6f42b4c3",
+    "type": "visit",
+    "visitor_id": 47,
+    "start_time": "2025-05-02T16:58:59.000000",
+    "end_time": "2025-05-02T17:04:47.000000",
+    "duration": 348
+  }
+]

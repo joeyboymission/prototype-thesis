@@ -3,9 +3,17 @@ import json
 from datetime import datetime
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
+from bson import ObjectId, json_util
 
 # MongoDB Setup
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
+
+# Custom JSON encoder to handle MongoDB ObjectId conversion to string
+class MongoJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)  # Convert ObjectId to string directly
+        return super().default(obj)
 
 def check_db_connection():
     """Test MongoDB connection and return status"""
@@ -18,35 +26,51 @@ def check_db_connection():
         return False, None
 
 def ensure_checkout_dir():
-    """Ensure the checkout directory exists"""
-    checkout_dir = os.path.dirname(os.path.abspath(__file__))
+    """Ensure the data-checkout directory exists"""
+    # Get the parent directory of the current script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(script_dir)
+    
+    # Create the data-checkout directory if it doesn't exist
+    checkout_dir = os.path.join(parent_dir, "data-checkout")
     if not os.path.exists(checkout_dir):
+        print(f"Creating data-checkout directory: {checkout_dir}")
         os.makedirs(checkout_dir)
+    
     return checkout_dir
 
 def export_data(client):
     """Export data from odor_module collection to JSON"""
     try:
         db = client["Smart_Cubicle"]
-        collection = db["odor_module"]
+        collection = db["odor_module"]  # Keep the correct collection name
         
-        # Get all documents
-        documents = list(collection.find({}, {'_id': False}))
+        # Get all documents including _id field
+        documents = list(collection.find({}))
         
         # Format timestamps for better readability
         for doc in documents:
             if 'timestamp' in doc:
-                doc['timestamp'] = doc['timestamp']
+                # Ensure timestamp is properly formatted
+                try:
+                    if isinstance(doc['timestamp'], str):
+                        # If already a string, ensure it's properly formatted
+                        datetime_obj = datetime.strptime(doc['timestamp'], "%Y-%m-%d %H:%M:%S")
+                        doc['timestamp'] = datetime_obj.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    # Keep original if formatting fails
+                    pass
         
         # Ensure checkout directory exists
         checkout_dir = ensure_checkout_dir()
         output_file = os.path.join(checkout_dir, 'odor-checkout.json')
         
-        # Write to JSON file
+        # Write to JSON file using custom JSON encoder instead of json_util.dumps
         with open(output_file, 'w') as f:
-            json.dump(documents, f, indent=2)
+            json.dump(documents, f, indent=2, cls=MongoJSONEncoder)
             
         print(f"\nSuccessfully exported {len(documents)} documents to {output_file}")
+        print(f"File path: {output_file}")
         
     except Exception as e:
         print(f"\nError during export: {e}")
