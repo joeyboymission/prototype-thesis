@@ -51,12 +51,23 @@
         {
             "visitor_id": 7,
             "start_time": 1746449090.0145679,
-            "start_time_iso": "2025-05-05T20:44:50.014568"
+            "start_time_iso": "2025-05-05T20:44:50.014568",
+            "end_time": 1746449145.2994597,
+            "duration": 55.284891843795776,
+            "end_time_iso": "2025-05-05T20:45:45.299460"
+        },
+        {
+            "visitor_id": 8,
+            "start_time": 1746449255.3444626,
+            "start_time_iso": "2025-05-05T20:47:35.344463",
+            "end_time": 1746449350.3590539,
+            "duration": 95.01459121704102,
+            "end_time_iso": "2025-05-05T20:49:10.359054"
         }
     ],
     "summary": {
-        "total_visitors": 6,
-        "average_duration": 428.1005919774373
+        "total_visitors": 8,
+        "average_duration": 339.8628793656826
     },
-    "current_presence": true
+    "current_presence": false
 }

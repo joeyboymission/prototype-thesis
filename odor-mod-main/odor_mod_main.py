@@ -375,20 +375,20 @@ class OdorModule(ModuleBase):
     def connect_to_mongodb(self):
         """Connect to MongoDB and restore latest state"""
         global MONGODB_AVAILABLE
-    
+        
         if not MONGODB_AVAILABLE:
             self.log_message("MongoDB support not available, using local storage only.")
             return False
-    
+        
         try:
             self.log_message("Checking the connection to Database...")
             self.mongo_client = MongoClient(self.MONGO_URI, serverSelectionTimeoutMS=5000)
             # Test connection
             self.mongo_client.admin.command('ping')
-        
+            
             self.mongo_db = self.mongo_client["Smart_Cubicle"]
             self.mongo_collection = self.mongo_db["odor_resource"]  # Using the correct collection name
-        
+            
             # Check if collection exists and has data
             if self.mongo_collection.count_documents({}) > 0:
                 self.log_message("Found existing data in remote database")
@@ -396,7 +396,7 @@ class OdorModule(ModuleBase):
                 if latest_doc:
                     self.reading_counter = latest_doc.get("reading", 0)
                     self.log_message(f"Latest remote reading number: {self.reading_counter}")
-        
+            
             self.log_message("Database Connected Successfully!")
             return True
         except Exception as e:
@@ -423,7 +423,7 @@ class OdorModule(ModuleBase):
         try:
             # Ensure the directory exists
             os.makedirs(self.DATA_DIR, exist_ok=True)
-        
+            
             existing_data = []
             if os.path.exists(self.LOCAL_FILE):
                 try:
@@ -431,19 +431,19 @@ class OdorModule(ModuleBase):
                         existing_data = json.load(f)
                 except json.JSONDecodeError:
                     self.log_message("Creating new data file (existing file corrupt)")
-        
+            
             # Ensure data has the correct format
             if not isinstance(existing_data, list):
                 existing_data = []
-        
+            
             existing_data.append(data)
-        
+            
             # Use atomic write to prevent corruption
             temp_file = self.LOCAL_FILE + ".tmp"
             with open(temp_file, "w") as f:
                 json.dump(existing_data, f, indent=2)
             os.replace(temp_file, self.LOCAL_FILE)
-        
+            
             return True
         except Exception as e:
             self.log_message(f"Local storage error: {e}")
@@ -676,18 +676,17 @@ class OdorModule(ModuleBase):
         # Check if space is occupied
         is_occupied = self.occupancy_monitor.is_space_occupied()
         self.sensor_data["occupancy"] = "OCCUPIED" if is_occupied else "VACANT"
-    
+        
         current_time = time.time()
         current_fan_state = self.sensor_data["fan_state"] == "ON"
         last_exit_time = self.occupancy_monitor.get_last_exit_time()
-    
+        
         # Fan control logic
         if is_occupied:
             # Turn on fan when occupied
             if not current_fan_state:
                 self.log_message("Occupied space detected - activating fan")
                 self.set_fan_state(1)
-                
         elif not is_occupied and current_fan_state:
             # Check if post-exit duration has passed
             if current_time - last_exit_time > self.FAN_POST_EXIT_DURATION:
@@ -708,12 +707,12 @@ class OdorModule(ModuleBase):
         mongodb_connected = self.connect_to_mongodb()
         if not mongodb_connected:
             self.log_message("No MongoDB connection. Using local storage only.")
-    
-    # Initialize storage system
+        
+        # Initialize storage system
         if not self.initialize_storage():
             self.log_message("Failed to initialize storage system")
-        return
-    
+            return
+        
         self.log_message("Detecting the initial air quality...")
         
         # Initial reading
@@ -761,7 +760,7 @@ class OdorModule(ModuleBase):
                     if current_time - last_device_update_time >= 1:
                         self.update_devices()
                         last_device_update_time = current_time
-        
+                    
                     # Check if it's time for a new reading
                     if current_time - last_reading_time >= self.READING_INTERVAL:
                         # Read sensor

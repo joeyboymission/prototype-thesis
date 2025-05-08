@@ -19,15 +19,14 @@ def check_db_connection():
         return False, None
 
 def ensure_checkout_dir():
-    """Ensure the data-checkout directory exists"""
-    # Get the parent directory of the current script
+    """Ensure the checkout-data directory exists within the checkout directory"""
+    # Get the current script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(script_dir)
     
-    # Create the data-checkout directory if it doesn't exist
-    checkout_dir = os.path.join(parent_dir, "data-checkout")
+    # Create the checkout-data directory within the checkout directory
+    checkout_dir = os.path.join(script_dir, "checkout-data")
     if not os.path.exists(checkout_dir):
-        print(f"Creating data-checkout directory: {checkout_dir}")
+        print(f"Creating checkout-data directory: {checkout_dir}")
         os.makedirs(checkout_dir)
     
     return checkout_dir

@@ -1,0 +1,3105 @@
+[
+  {
+    "_id": "6818b6e7b5b2881f36f85ef6",
+    "reading": 7,
+    "timestamp": "2025-05-05 21:02:31",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:02:31",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:02:31"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:02:31"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:02:31"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 18,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "UP",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818b7c6b985f630a26583d3",
+    "reading": 8,
+    "timestamp": "2025-05-05 21:06:14",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:06:14",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:06:14"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:06:14"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:06:14"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 18,
+        "start_time": "2025-05-05 21:05:56"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450356.2586043,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450356.2586043,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450356.2586043,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450356.2586043,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "OCCUPIED",
+              "occupied_time": "2025-05-05 21:06:14",
+              "previous_status": "OCCUPIED",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:06:14",
+              "last_reading": 1746450356.2586043
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450356.2586043
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450356.2586043
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450365.257494,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818b7d6b985f630a26583e4",
+    "reading": 9,
+    "timestamp": "2025-05-05 21:06:30",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:06:30",
+        "modules": {
+          "dispenser": {
+            "status": "stopped",
+            "last_check": "2025-05-05 21:06:30"
+          },
+          "occupancy": {
+            "status": "stopped",
+            "last_check": "2025-05-05 21:06:30"
+          },
+          "odor": {
+            "status": "stopped",
+            "last_check": "2025-05-05 21:06:30"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 34,
+        "start_time": "2025-05-05 21:05:56"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "stopped",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450356.2586043,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450356.2586043,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450356.2586043,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450356.2586043,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "stopped",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:06:28",
+              "last_reading": 1746450389.8004997
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450356.2586043
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450356.2586043
+            }
+          }
+        },
+        "odor": {
+          "status": "stopped",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450365.257494,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818b814b5b2881f36f8601c",
+    "reading": 8,
+    "timestamp": "2025-05-05 21:07:32",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:07:32",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:07:32"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:07:32"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:07:32"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 319,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:07:30",
+              "last_reading": 1746450452.0064192
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818b940b5b2881f36f86141",
+    "reading": 9,
+    "timestamp": "2025-05-05 21:12:32",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:12:32",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:12:32"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:12:32"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:12:32"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 619,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "OCCUPIED",
+              "occupied_time": "2025-05-05 21:12:31",
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:12:31",
+              "last_reading": 1746450751.6618223
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818ba6cb5b2881f36f86264",
+    "reading": 10,
+    "timestamp": "2025-05-05 21:17:32",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:17:32",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:17:32"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:17:32"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:17:32"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 919,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:17:28",
+              "last_reading": 1746451052.4710436
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818bb98b5b2881f36f86388",
+    "reading": 11,
+    "timestamp": "2025-05-05 21:22:32",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:22:32",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:22:32"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:22:32"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:22:32"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 1219,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:22:29",
+              "last_reading": 1746451352.1109803
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818bcc5b5b2881f36f864b1",
+    "reading": 12,
+    "timestamp": "2025-05-05 21:27:33",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:27:33",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:27:33"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:27:33"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:27:33"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 1520,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:27:26",
+              "last_reading": 1746451652.8796227
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818bdf1b5b2881f36f865d0",
+    "reading": 13,
+    "timestamp": "2025-05-05 21:32:33",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:32:33",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:32:33"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:32:33"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:32:33"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 1820,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "OCCUPIED",
+              "occupied_time": "2025-05-05 21:32:33",
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:32:33",
+              "last_reading": 1746451953.1118455
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818bf1db5b2881f36f866f7",
+    "reading": 14,
+    "timestamp": "2025-05-05 21:37:33",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:37:33",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:37:33"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:37:33"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:37:33"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 2120,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:37:19",
+              "last_reading": 1746452253.5384648
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818c049b5b2881f36f8681e",
+    "reading": 15,
+    "timestamp": "2025-05-05 21:42:33",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:42:33",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:42:33"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:42:33"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:42:33"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 2420,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "OCCUPIED",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:42:33",
+              "last_reading": 1746452553.8629448
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818c176b5b2881f36f86945",
+    "reading": 16,
+    "timestamp": "2025-05-05 21:47:34",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:47:34",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:47:34"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:47:34"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:47:34"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 2721,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:47:21",
+              "last_reading": 1746452854.3670685
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818c2a3b5b2881f36f86a6c",
+    "reading": 17,
+    "timestamp": "2025-05-05 21:52:35",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:52:35",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:52:35"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:52:35"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:52:35"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 3022,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:52:27",
+              "last_reading": 1746453154.530185
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818c3cfb5b2881f36f86b90",
+    "reading": 18,
+    "timestamp": "2025-05-05 21:57:35",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 21:57:35",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 21:57:35"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 21:57:35"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 21:57:35"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 3322,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 21:57:17",
+              "last_reading": 1746453455.3931644
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818c4fbb5b2881f36f86cb6",
+    "reading": 19,
+    "timestamp": "2025-05-05 22:02:35",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:02:35",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:02:35"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:02:35"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:02:35"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 3622,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "OCCUPIED",
+              "occupied_time": "2025-05-05 22:02:34",
+              "previous_status": "OCCUPIED",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:02:34",
+              "last_reading": 1746453755.3613162
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818c627b5b2881f36f86ddd",
+    "reading": 20,
+    "timestamp": "2025-05-05 22:07:35",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:07:35",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:07:35"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:07:35"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:07:35"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 3922,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:07:33",
+              "last_reading": 1746454055.7075567
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818c754b5b2881f36f86efa",
+    "reading": 21,
+    "timestamp": "2025-05-05 22:12:36",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:12:36",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:12:36"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:12:36"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:12:36"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 4223,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:12:31",
+              "last_reading": 1746454356.239669
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818c880b5b2881f36f8700c",
+    "reading": 22,
+    "timestamp": "2025-05-05 22:17:36",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:17:07",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:17:07"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:17:07"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:17:07"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 4494,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "OCCUPIED",
+              "occupied_time": "2025-05-05 22:17:35",
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:17:35",
+              "last_reading": 1746454655.953788
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818c9acb5b2881f36f87125",
+    "reading": 23,
+    "timestamp": "2025-05-05 22:22:36",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:22:07",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:22:07"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:22:07"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:22:07"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 4794,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:22:35",
+              "last_reading": 1746454956.4702168
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818cad8b5b2881f36f87235",
+    "reading": 24,
+    "timestamp": "2025-05-05 22:27:36",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:27:07",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:27:07"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:27:07"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:27:07"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 5094,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:27:36",
+              "last_reading": 1746455257.2463505
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818cc05b5b2881f36f87345",
+    "reading": 25,
+    "timestamp": "2025-05-05 22:32:37",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:32:08",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:32:08"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:32:08"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:32:08"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 5395,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:32:35",
+              "last_reading": 1746455557.0468407
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818cd31b5b2881f36f8746d",
+    "reading": 26,
+    "timestamp": "2025-05-05 22:37:37",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:37:08",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:37:08"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:37:08"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:37:08"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 5695,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "OCCUPIED",
+              "occupied_time": "2025-05-05 22:37:37",
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:37:37",
+              "last_reading": 1746455857.7419128
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818ce5eb5b2881f36f8758c",
+    "reading": 27,
+    "timestamp": "2025-05-05 22:42:38",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:42:09",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:42:09"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:42:09"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:42:09"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 5996,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "OCCUPIED",
+              "occupied_time": "2025-05-05 22:42:38",
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:42:38",
+              "last_reading": 1746456158.5553744
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818cf8ab5b2881f36f8769e",
+    "reading": 28,
+    "timestamp": "2025-05-05 22:47:38",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:47:10",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:47:10"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:47:10"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:47:10"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 6297,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:47:35",
+              "last_reading": 1746456459.6735587
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818d0b7b5b2881f36f877bb",
+    "reading": 29,
+    "timestamp": "2025-05-05 22:52:39",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:52:11",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:52:11"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:52:11"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:52:11"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 6598,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "OCCUPIED",
+              "occupied_time": "2025-05-05 22:52:38",
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:52:38",
+              "last_reading": 1746456758.6445122
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818d1e3b5b2881f36f878dc",
+    "reading": 30,
+    "timestamp": "2025-05-05 22:57:39",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 22:57:11",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 22:57:11"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 22:57:11"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 22:57:11"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 6898,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "OCCUPIED",
+              "occupied_time": "2025-05-05 22:57:39",
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 22:57:39",
+              "last_reading": 1746457059.1650136
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818d30fb5b2881f36f879ec",
+    "reading": 31,
+    "timestamp": "2025-05-05 23:02:39",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 23:02:11",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 23:02:11"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 23:02:11"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 23:02:11"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 7198,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "VACANT",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 23:02:31",
+              "last_reading": 1746457359.0795999
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818d43cb5b2881f36f87b0d",
+    "reading": 32,
+    "timestamp": "2025-05-05 23:07:40",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 23:07:12",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 23:07:12"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 23:07:12"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 23:07:12"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 7499,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "OCCUPIED",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 23:07:39",
+              "last_reading": 1746457659.6231086
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  },
+  {
+    "_id": "6818d568b5b2881f36f87c28",
+    "reading": 33,
+    "timestamp": "2025-05-05 23:12:40",
+    "data": {
+      "system_health": {
+        "last_update": "2025-05-05 23:12:12",
+        "modules": {
+          "dispenser": {
+            "status": "running",
+            "last_check": "2025-05-05 23:12:12"
+          },
+          "occupancy": {
+            "status": "running",
+            "last_check": "2025-05-05 23:12:12"
+          },
+          "odor": {
+            "status": "running",
+            "last_check": "2025-05-05 23:12:12"
+          }
+        },
+        "mongodb_status": "connected",
+        "system_uptime": 7799,
+        "start_time": "2025-05-05 21:02:13"
+      },
+      "module_status": {
+        "dispenser": {
+          "status": "running",
+          "details": {
+            "CONT1": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT2": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT3": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            },
+            "CONT4": {
+              "distance_cm": 0.0,
+              "previous_volume_ml": 0.0,
+              "remaining_volume_ml": 0.0,
+              "sensor_state": "DOWN",
+              "last_reading": 1746450133.9565742,
+              "last_volume_change": 0
+            }
+          }
+        },
+        "occupancy": {
+          "status": "running",
+          "details": {
+            "CUB1": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": "OCCUPIED",
+              "sensor_state": "UP",
+              "last_change": "2025-05-05 23:12:39",
+              "last_reading": 1746457959.9019415
+            },
+            "CUB2": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            },
+            "CUB3": {
+              "status": "VACANT",
+              "occupied_time": null,
+              "previous_status": null,
+              "sensor_state": "DOWN",
+              "last_change": null,
+              "last_reading": 1746450133.9565742
+            }
+          }
+        },
+        "odor": {
+          "status": "running",
+          "details": {
+            "value": 0,
+            "previous_value": 0,
+            "sensor_state": "UP",
+            "fan_state": "OFF",
+            "last_reading": 1746450143.0297208,
+            "status": "GOOD",
+            "occupancy": "VACANT"
+          }
+        }
+      }
+    }
+  }
+]

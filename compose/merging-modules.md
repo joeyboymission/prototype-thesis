@@ -1,16 +1,5 @@
 # Merging Modules
-Since all of the modules are done:
-Odor Module
-`/odor-mod-main/odor-mod-main.py`
-
-Occupancy Module
-`/occupancy-mod-main/occu-mod-main.py`
-
-Dispenser Module
-`/disp-mod-main/disp-mod-main.py`
-
-Central Hub Module
-`/central-hub-mod/cen-mod-main.py`
+v
 
 all are in the same project named `/prototype-thesis`
 I want this kind of approach, instead of merging them as one and make a lengthy line which is make more not maintainable when dubgging instead importing them from the main python script `/smart-restroom-cli.py` and call or import from the external scripts which I have mentioned on the above.
