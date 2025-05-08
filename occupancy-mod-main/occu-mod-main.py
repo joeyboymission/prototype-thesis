@@ -32,12 +32,16 @@ except ImportError:
 # Configuration
 SENSOR_PIN = 17         # E18-D80NK proximity sensor
 BUZZER_PIN = 27         # Buzzer for audio feedback
+FAN_RELAY_PIN = 23      # GPIO23 for exhaust fan relay
+FRESHENER_RELAY_PIN = 24 # GPIO24 for air freshener relay
 DATA_DIR = "/home/admin/Documents/local-data"
 LOCAL_FILE = os.path.join(DATA_DIR, "occupancy-data.json")
 MONGO_URI = "mongodb+srv://SmartUser:NewPass123%21@smartrestroomweb.ucrsk.mongodb.net/Smart_Cubicle?retryWrites=true&w=majority&appName=SmartRestroomWeb"
 DEBOUNCE_TIME = 0.5     # 500ms debounce for sensor
 SHORT_BEEP = 0.2        # 200ms
 LONG_BEEP = 1.0         # 1s
+FAN_POST_EXIT_DURATION = 10  # 10 seconds delay after visitor exits
+SPRAY_DURATION = 0.5    # 500ms pulse for air freshener
 
 # States
 STATE_VACANT = "Vacant"
@@ -50,6 +54,9 @@ current_visitor_id = None
 current_start_time = None
 last_state_change_time = time.time()
 last_sensor_state = None
+last_exit_time = time.time()
+fan_status = False
+freshener_triggered = False
 log_queue = deque(maxlen=10)  # Keep last 10 log messages
 mongo_collection = None
 mongo_client = None
@@ -77,7 +84,14 @@ def setup_gpio():
         chip = lgpio.gpiochip_open(0)
         lgpio.gpio_claim_input(chip, SENSOR_PIN, lgpio.SET_PULL_UP)
         lgpio.gpio_claim_output(chip, BUZZER_PIN)
-        lgpio.gpio_write(chip, BUZZER_PIN, 0)  # Ensure buzzer is off
+        lgpio.gpio_claim_output(chip, FAN_RELAY_PIN)
+        lgpio.gpio_claim_output(chip, FRESHENER_RELAY_PIN)
+        
+        # Initialize outputs to OFF state (active-low: HIGH = OFF)
+        lgpio.gpio_write(chip, BUZZER_PIN, 0)
+        lgpio.gpio_write(chip, FAN_RELAY_PIN, 1)
+        lgpio.gpio_write(chip, FRESHENER_RELAY_PIN, 1)
+        
         last_sensor_state = lgpio.gpio_read(chip, SENSOR_PIN)
         log_message("GPIO initialized successfully")
         return True
@@ -289,23 +303,84 @@ def initialize_storage():
     
     return True
 
+def toggle_fan(state):
+    """Toggle exhaust fan on or off (active-low: LOW = ON, HIGH = OFF)"""
+    global fan_status, chip
+    
+    if chip is None:
+        log_message("Error: GPIO not initialized")
+        return False
+    
+    try:
+        # Set GPIO pin: LOW (0) to activate, HIGH (1) to deactivate
+        lgpio.gpio_write(chip, FAN_RELAY_PIN, 0 if state else 1)
+        fan_status = state
+        log_message(f"Exhaust Fan {'ON' if state else 'OFF'}")
+        return True
+    except Exception as e:
+        log_message(f"Error toggling exhaust fan: {e}")
+        return False
+
+def trigger_air_freshener():
+    """Trigger air freshener with a 500ms pulse"""
+    global freshener_triggered, chip
+    
+    if chip is None:
+        log_message("Error: GPIO not initialized")
+        return False
+    
+    try:
+        log_message("Triggering air freshener (500ms pulse)...")
+        lgpio.gpio_write(chip, FRESHENER_RELAY_PIN, 0)  # LOW to activate
+        time.sleep(SPRAY_DURATION)  # 500ms pulse
+        lgpio.gpio_write(chip, FRESHENER_RELAY_PIN, 1)  # HIGH to deactivate
+        freshener_triggered = True
+        log_message("Air freshener triggered successfully")
+        return True
+    except Exception as e:
+        log_message(f"Error triggering air freshener: {e}")
+        return False
+
+def update_devices():
+    """Update device states based on occupancy"""
+    global fan_status, last_exit_time
+    
+    current_time = time.time()
+    
+    # Update fan status
+    if current_state == STATE_OCCUPIED:
+        # Turn on fan when occupied
+        if not fan_status:
+            toggle_fan(True)
+    elif current_state == STATE_VACANT and fan_status:
+        # Turn off fan after delay when vacant
+        if current_time - last_exit_time > FAN_POST_EXIT_DURATION:
+            toggle_fan(False)
+            log_message(f"Exhaust fan turned off after {FAN_POST_EXIT_DURATION} seconds of vacancy")
+            # Trigger air freshener after fan is off
+            trigger_air_freshener()
+
 def record_entry():
     """Record a new visitor entry"""
-    global visitor_count, current_visitor_id, current_start_time, current_state
+    global visitor_count, current_visitor_id, current_start_time, current_state, last_exit_time
     
     visitor_count += 1
     current_visitor_id = visitor_count
     current_start_time = time.time()
     current_state = STATE_OCCUPIED
+    last_exit_time = time.time()  # Reset exit time
     
     # Single beep for entry
     beep_buzzer(SHORT_BEEP)
+    
+    # Turn on exhaust fan
+    toggle_fan(True)
     
     display_status()
 
 def record_exit():
     """Record visitor exit"""
-    global current_state, current_visitor_id, current_start_time
+    global current_state, current_visitor_id, current_start_time, last_exit_time
     
     if current_state != STATE_OCCUPIED or current_start_time is None:
         log_message("Warning: Exit recorded without matching entry")
@@ -331,8 +406,9 @@ def record_exit():
     # Double beep for exit
     double_beep()
     
-    # Reset state
+    # Update state and timing
     current_state = STATE_VACANT
+    last_exit_time = time.time()
     current_start_time = None
     current_visitor_id = None
     
@@ -410,6 +486,7 @@ def monitor_occupancy():
     
     detection_start = None
     last_status_time = time.time()
+    last_device_update_time = time.time()
     
     # Main monitoring loop
     while running:
@@ -440,6 +517,11 @@ def monitor_occupancy():
                     
             last_sensor_state = sensor_state
         
+        # Update device states every second
+        if current_time - last_device_update_time >= 1:
+            update_devices()
+            last_device_update_time = current_time
+        
         # Display status periodically
         if current_time - last_status_time >= 30:
             display_status()
@@ -460,6 +542,10 @@ def main():
     finally:
         # Clean up
         if chip is not None:
+            # Turn off all outputs
+            lgpio.gpio_write(chip, BUZZER_PIN, 0)
+            lgpio.gpio_write(chip, FAN_RELAY_PIN, 1)
+            lgpio.gpio_write(chip, FRESHENER_RELAY_PIN, 1)
             lgpio.gpiochip_close(chip)
         if mongo_client is not None:
             mongo_client.close()
