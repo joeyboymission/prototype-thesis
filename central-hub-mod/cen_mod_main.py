@@ -496,6 +496,54 @@ class CentralHubModule(ModuleBase):
             return False
         return True
 
+    def setup_hardware(self):
+        """Initialize GPIO for DC fan control"""
+        global SIMULATE_GPIO
+        
+        # If we're already in simulation mode, just return
+        if SIMULATE_GPIO:
+            self.log_message("Running in GPIO simulation mode", "WARNING")
+            return True
+            
+        try:
+            # Try different GPIO chip numbers (some systems use 0, others use different numbers)
+            for chip_num in [0, 1, 2]:
+                try:
+                    self.log_message(f"Trying to open GPIO chip {chip_num}...")
+                    self.h = lgpio.gpiochip_open(chip_num)
+                    if self.h is not None:
+                        # Try to free the pins first
+                        for pin in [K1_PIN, K2_PIN, K3_PIN]:
+                            try:
+                                lgpio.gpio_free(self.h, pin)
+                            except:
+                                pass
+                            time.sleep(0.1)
+                        break
+                except Exception as e:
+                    self.log_message(f"Could not open GPIO chip {chip_num}: {e}", "WARNING")
+            
+            # If we couldn't open any GPIO chip, fall back to simulation
+            if self.h is None:
+                raise Exception("Could not open any GPIO chip")
+                
+            # Set up relay pins (active-low)
+            for pin in [K1_PIN, K2_PIN, K3_PIN]:
+                try:
+                    lgpio.gpio_claim_output(self.h, pin, 0, 1)  # Initialize HIGH (relay off)
+                except Exception as e:
+                    self.log_message(f"Error setting up pin {pin}: {e}", "WARNING")
+                    continue
+            
+            self.log_message("GPIO initialized successfully for relay control")
+            return True
+            
+        except Exception as e:
+            self.log_message(f"Error initializing GPIO: {str(e)}", "ERROR")
+            self.log_message("Falling back to GPIO simulation mode", "WARNING")
+            SIMULATE_GPIO = True
+            return True  # Return True so the module can run in simulation mode
+
 def signal_handler(sig, frame):
     """Handle Ctrl+C gracefully"""
     print("\nStopping Central Hub Module...")

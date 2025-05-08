@@ -120,35 +120,47 @@ class SmartRestroomCLI:
         """Initialize all modules in the correct order"""
         self.debug_handler.log("Starting module initialization")
         
+        # Create data directory if it doesn't exist
+        os.makedirs(DATA_DIR, exist_ok=True)
+        
         # 1. Dispenser Module
         if DISPENSER_MODULE_AVAILABLE:
             try:
                 self.debug_handler.log("Initializing Dispenser Module...")
                 self.dispenser_module = DispenserModule()
-                self.dispenser_module.start()
+                if not self.dispenser_module.start():
+                    self.debug_handler.log("Failed to start Dispenser Module")
+                    return False
                 self.debug_handler.log("Dispenser Module initialized successfully")
             except Exception as e:
                 self.debug_handler.log(f"Error initializing Dispenser Module: {e}")
+                return False
         
         # 2. Occupancy Module
         if OCCUPANCY_MODULE_AVAILABLE:
             try:
                 self.debug_handler.log("Initializing Occupancy Module...")
                 self.occupancy_module = OccupancyModule()
-                self.occupancy_module.start()
+                if not self.occupancy_module.start():
+                    self.debug_handler.log("Failed to start Occupancy Module")
+                    return False
                 self.debug_handler.log("Occupancy Module initialized successfully")
             except Exception as e:
                 self.debug_handler.log(f"Error initializing Occupancy Module: {e}")
+                return False
         
         # 3. Odor Module
         if ODOR_MODULE_AVAILABLE:
             try:
                 self.debug_handler.log("Initializing Odor Module...")
                 self.odor_module = OdorModule()
-                self.odor_module.start()
+                if not self.odor_module.start():
+                    self.debug_handler.log("Failed to start Odor Module")
+                    return False
                 self.debug_handler.log("Odor Module initialized successfully")
             except Exception as e:
                 self.debug_handler.log(f"Error initializing Odor Module: {e}")
+                return False
         
         # 4. Central Hub Module
         if CENTRAL_HUB_MODULE_AVAILABLE:
@@ -164,13 +176,17 @@ class SmartRestroomCLI:
                 if self.odor_module:
                     self.central_hub.register_module("odor", self.odor_module)
                 
-                self.central_hub.start()
+                if not self.central_hub.start():
+                    self.debug_handler.log("Failed to start Central Hub Module")
+                    return False
                 self.debug_handler.log("Central Hub Module initialized successfully")
             except Exception as e:
                 self.debug_handler.log(f"Error initializing Central Hub Module: {e}")
+                return False
         
         self.debug_handler.log("Module initialization completed")
-        
+        return True
+    
     def print_module_status(self):
         """Print the status of all modules"""
         self.debug_handler.log("=================")
@@ -289,7 +305,10 @@ class SmartRestroomCLI:
         self.running = True
         
         # Initialize modules
-        self.initialize_modules()
+        if not self.initialize_modules():
+            self.debug_handler.log("Failed to initialize modules")
+            self.stop()
+            return
         
         # Print initial module status
         self.print_module_status()

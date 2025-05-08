@@ -585,130 +585,100 @@ class DispenserModule(ModuleBase):
         return list(self.log_queue)[-count:]
 
     def run(self):
-        """Main function to monitor dispenser levels"""
-        # Initialize storage system
-        if not self.initialize_storage():
-            self.log_message("Failed to initialize storage system")
-            self.running = False
-            return
-        
-        # Connect to MongoDB
-        mongodb_connected = self.connect_to_mongodb()
-        if not mongodb_connected:
-            self.log_message("No MongoDB connection. Using local storage only.")
-        
-        # Initialize hardware
-        hardware_initialized = self.setup_hardware()
-        if not hardware_initialized:
-            self.log_message("Failed to initialize hardware")
-            self.running = False
-            return
-        
-        self.log_message("Dispenser monitoring started")
-        
-        # Register signal handler
-        def signal_handler(signum, frame):
-            self.log_message("Received stop signal, cleaning up...")
-            self.running = False
-            self.stop_event.set()
-        
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        
-        # Initial reading
-        for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
-            container = f"CONT{i+1}"
-            distance = self.measure_distance(trigger, echo)
-            volume = self.calculate_volume(container, distance)
+        """Main monitoring loop"""
+        try:
+            # Initialize storage system
+            if not self.initialize_storage():
+                self.log_message("Failed to initialize storage system")
+                return
             
-            if volume is not None:
-                self.container_data[container]["distance_cm"] = distance
-                self.container_data[container]["remaining_volume_ml"] = volume
-        
-        # Save initial reading
-        initial_data = self.get_data_template()
-        for i in range(1, 5):
-            container = f"CONT{i}"
-            initial_data["data"][container]["distance_cm"] = self.container_data[container]["distance_cm"]
-            initial_data["data"][container]["remaining_volume_ml"] = self.container_data[container]["remaining_volume_ml"]
-        
-        self.save_dispenser_data(initial_data)
-        self.previous_readings = initial_data
-        
-        # Main monitoring loop
-        last_reading_time = time.time()
-        
-        while self.running and not self.stop_event.is_set():
-            if not self.paused:
-                try:
-                    current_time = time.time()
-                    
-                    # Check if it's time for a new reading
-                    if current_time - last_reading_time >= self.READING_INTERVAL:
-                        self.log_message("Checking dispenser levels...")
-                        
-                        # Reset to be re-populated with new readings
-                        current_data = self.get_data_template()
-                        readings = []
-                        
-                        for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
-                            container = f"CONT{i+1}"
-                            distance = self.measure_distance(trigger, echo)
-                            volume = self.calculate_volume(container, distance)
-                            
-                            prev_volume = self.container_data[container]["remaining_volume_ml"]
-                            
-                            if volume is not None:
-                                # Update container data
-                                self.container_data[container]["distance_cm"] = distance
-                                self.container_data[container]["previous_volume_ml"] = prev_volume
-                                self.container_data[container]["remaining_volume_ml"] = volume
-                                
-                                # Add to current data
-                                current_data["data"][container]["distance_cm"] = distance
-                                current_data["data"][container]["previous_volume_ml"] = prev_volume
-                                current_data["data"][container]["remaining_volume_ml"] = volume
-                                
-                                # Create readable format for log
-                                readings.append(f"{container}: {distance:.2f} cm {volume:.2f} ml")
-                        
-                        # Display current readings
-                        self.log_message(" | ".join(readings))
-                        
-                        # Only save if there's a significant change
-                        if self.should_save_reading(current_data):
-                            self.save_dispenser_data(current_data)
-                            self.reading_counter += 1
-                        
-                        # Update previous reading
-                        self.previous_readings = current_data
-                        
-                        last_reading_time = current_time
-                    
-                except Exception as e:
-                    self.log_message(f"Error in dispenser module: {e}")
+            # Connect to MongoDB
+            mongodb_connected = self.connect_to_mongodb()
+            if not mongodb_connected:
+                self.log_message("No MongoDB connection. Using local storage only.")
+            
+            # Initialize GPIO
+            if not self.setup_hardware():
+                self.log_message("Failed to initialize GPIO")
+                return
+            
+            self.log_message("Detecting the initial volume for each container...")
+            
+            # Create initial data template
+            data = self.get_data_template()
+            
+            # Read all containers
+            for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
+                container = f"CONT{i+1}"
+                distance = self.measure_distance(trigger, echo)
+                volume = self.calculate_volume(container, distance)
                 
-                time.sleep(1)  # Check every second
-            else:
-                time.sleep(1)  # Check for un-pause every second
-        
-        # Save final reading regardless of changes
-        self.log_message("Saving final reading before exit...")
-        
-        # Perform one last reading
-        final_data = self.get_data_template()
-        for i in range(1, 5):
-            container = f"CONT{i}"
-            final_data["data"][container]["distance_cm"] = self.container_data[container]["distance_cm"]
-            final_data["data"][container]["previous_volume_ml"] = self.container_data[container]["previous_volume_ml"]
-            final_data["data"][container]["remaining_volume_ml"] = self.container_data[container]["remaining_volume_ml"]
-        
-        self.save_dispenser_data(final_data)
-        self.reading_counter += 1
-        
-        # Clean up hardware
-        self.cleanup_hardware()
-        self.log_message("Dispenser module shut down gracefully")
+                # Store data with 2 decimal precision
+                data["data"][container]["distance_cm"] = round(distance if distance is not None else 0.00, 2)
+                data["data"][container]["remaining_volume_ml"] = round(volume if volume is not None else 0.00, 2)
+                if self.previous_readings and self.previous_readings["data"][container]["remaining_volume_ml"] is not None:
+                    data["data"][container]["previous_volume_ml"] = round(self.previous_readings["data"][container]["remaining_volume_ml"], 2)
+                else:
+                    data["data"][container]["previous_volume_ml"] = data["data"][container]["remaining_volume_ml"]
+            
+            # Log initial readings
+            self.log_sensor_readings(data)
+            self.log_message("The sensors are ready!")
+            
+            while self.running and not self.stop_event.is_set():
+                # Create data template
+                data = self.get_data_template()
+                
+                # Read all containers
+                for i, (trigger, echo) in enumerate(zip(self.TRIGGERS, self.ECHOS)):
+                    container = f"CONT{i+1}"
+                    distance = self.measure_distance(trigger, echo)
+                    volume = self.calculate_volume(container, distance)
+                    
+                    # Store data with 2 decimal precision
+                    data["data"][container]["distance_cm"] = round(distance if distance is not None else 0.00, 2)
+                    data["data"][container]["remaining_volume_ml"] = round(volume if volume is not None else 0.00, 2)
+                    if self.previous_readings and self.previous_readings["data"][container]["remaining_volume_ml"] is not None:
+                        data["data"][container]["previous_volume_ml"] = round(self.previous_readings["data"][container]["remaining_volume_ml"], 2)
+                    else:
+                        data["data"][container]["previous_volume_ml"] = data["data"][container]["remaining_volume_ml"]
+                
+                # Always log the readings to show current state
+                self.log_sensor_readings(data)
+                
+                # Only save if there's a significant whole number change
+                if self.should_save_reading(data):
+                    self.save_dispenser_data(data)
+                    self.log_message("Status: DATA SAVED TO REMOTE AND LOCAL")
+                
+                # Update previous readings
+                self.previous_readings = data
+                
+                # Wait for the next reading interval
+                time.sleep(self.READING_INTERVAL)
+                
+        except Exception as e:
+            self.log_message(f"Error in main loop: {e}")
+        finally:
+            # Cleanup
+            if self.h is not None:
+                for pin in self.TRIGGERS + self.ECHOS:
+                    try:
+                        lgpio.gpio_free(self.h, pin)
+                    except:
+                        pass
+                try:
+                    lgpio.gpiochip_close(self.h)
+                except:
+                    pass
+            
+            if self.mongo_client:
+                try:
+                    self.mongo_client.close()
+                except:
+                    pass
+            
+            self.log_message("Dispenser Module Stopped")
 
 
 # If run directly (for testing)

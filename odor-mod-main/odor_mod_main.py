@@ -200,55 +200,25 @@ class OccupancyMonitor:
         if current_time - self.last_check_time < self.check_interval:
             return self.is_occupied
             
-        self.last_check_time = current_time
-        
-        # If MongoDB not available, use simulated data
-        if not MONGODB_AVAILABLE or not self.mongo_collection:
-            # Simulate occupancy with 20% probability when using simulated data
-            if random.random() < 0.2:
-                if not self.is_occupied:
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Simulated occupancy: now OCCUPIED")
-                    self.is_occupied = True
-                else:
-                    if self.is_occupied:
-                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Simulated occupancy: now VACANT")
-                        self.is_occupied = False
-                        self.last_exit_time = current_time
+        if not MONGODB_AVAILABLE or self.mongo_collection is None:
+            # Use simulated data if MongoDB is not available
+            self.is_occupied = random.choice([True, False])
+            self.last_check_time = current_time
             return self.is_occupied
             
         try:
-            # Query the most recent occupancy record
+            # Get latest occupancy status from MongoDB
             latest = self.mongo_collection.find_one(sort=[("timestamp", -1)])
-            
             if latest:
-                # Check all cubicles - if any is occupied, the space is occupied
-                previous_state = self.is_occupied
-                new_occupied = False
-                
-                for i in range(1, 4):
-                    cubicle_status = latest.get("data", {}).get(f"CUB{i}", {}).get("status")
-                    if cubicle_status == "OCCUPIED":
-                        new_occupied = True
-                        break
-                
-                # If state changed from occupied to vacant, record exit time
-                if previous_state and not new_occupied:
-                    self.last_exit_time = current_time
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Occupancy changed: now VACANT")
-                
-                # If state changed from vacant to occupied, log it
-                if not previous_state and new_occupied:
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Occupancy changed: now OCCUPIED")
-                
-                self.is_occupied = new_occupied
-                return self.is_occupied
+                self.is_occupied = latest.get("status", "VACANT") == "OCCUPIED"
+                if self.is_occupied:
+                    self.last_exit_time = time.time()
             
+            self.last_check_time = current_time
             return self.is_occupied
             
         except Exception as e:
-            print(f"Error checking occupancy from MongoDB: {e}")
-            # Try to reconnect
-            self.connect()
+            print(f"Error checking occupancy: {e}")
             return self.is_occupied
     
     def get_last_exit_time(self):
