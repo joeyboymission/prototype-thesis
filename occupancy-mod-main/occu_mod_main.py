@@ -78,10 +78,10 @@ class ModuleBase:
                 self.thread.daemon = True
                 self.thread.start()
                 print(f"{self.name} module started")
-        return True
+                return True
             else:
                 print(f"{self.name} module is already running")
-        return False
+                return False
 
     def stop(self):
         with self.lock:
@@ -166,7 +166,7 @@ class OccupancyModule(ModuleBase):
 
     def get_data_template(self):
         """Initialize data format for an occupancy reading"""
-    return {
+        return {
             "_id": str(ObjectId()) if MONGODB_AVAILABLE else f"local_{datetime.now().strftime('%Y%m%d%H%M%S')}",
             "reading": self.reading_counter + 1,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -262,18 +262,18 @@ class OccupancyModule(ModuleBase):
                     self.log_message(f"Latest remote reading number: {self.reading_counter}")
             
             self.log_message("Database Connected Successfully!")
-        return True
-    except Exception as e:
+            return True
+        except Exception as e:
             self.log_message(f"MongoDB connection error: {e}")
             self.mongo_client = None
             self.mongo_db = None
             self.mongo_collection = None
-        return False
+            return False
 
     def save_to_mongodb(self, data):
         """Save data to MongoDB"""
         if not MONGODB_AVAILABLE or self.mongo_collection is None:
-        return False
+            return False
     
         try:
             self.mongo_collection.insert_one(data)
@@ -284,21 +284,21 @@ class OccupancyModule(ModuleBase):
     
     def save_to_local_storage(self, data):
         """Save data to local JSON file"""
-    try:
+        try:
             # Ensure the directory exists
             os.makedirs(self.DATA_DIR, exist_ok=True)
         
-        existing_data = []
+            existing_data = []
             if os.path.exists(self.LOCAL_FILE):
-            try:
+                try:
                     with open(self.LOCAL_FILE, "r") as f:
-                    existing_data = json.load(f)
-            except json.JSONDecodeError:
+                        existing_data = json.load(f)
+                except json.JSONDecodeError:
                     self.log_message("Creating new data file (existing file corrupt)")
         
             # Ensure data has the correct format
-        if not isinstance(existing_data, list):
-            existing_data = []
+            if not isinstance(existing_data, list):
+                existing_data = []
         
             existing_data.append(data)
             
@@ -319,14 +319,14 @@ class OccupancyModule(ModuleBase):
         local_success = self.save_to_local_storage(occupancy_data)
         
         # Report overall status
-    if mongodb_success and local_success:
+        if mongodb_success and local_success:
             self.log_message("Status: DATA SAVED TO REMOTE AND LOCAL")
-    elif local_success:
+        elif local_success:
             self.log_message("Status: DATA SAVED TO LOCAL ONLY")
-    else:
+        else:
             self.log_message("Status: FAILED TO SAVE DATA")
     
-    return mongodb_success or local_success
+        return mongodb_success or local_success
 
     def should_save_reading(self, current_reading):
         """Determine if the current reading should be saved based on changes"""
@@ -358,7 +358,7 @@ class OccupancyModule(ModuleBase):
                     lgpio.gpio_claim_input(self.h, pir)
                     self.claimed_pins.append(pir)
                     self.log_message(f"Successfully claimed PIR sensor on GPIO{pir}")
-    except Exception as e:
+                except Exception as e:
                     self.log_message(f"Could not claim PIR sensor on GPIO{pir}: {e}")
             
             # Check if we were able to claim at least some pins
@@ -375,7 +375,7 @@ class OccupancyModule(ModuleBase):
     def cleanup_hardware(self):
         """Clean up GPIO resources"""
         if not LGPIO_AVAILABLE:
-        return
+            return
     
         if self.h is not None:
             # Only clean up pins that were successfully claimed
@@ -421,64 +421,55 @@ class OccupancyModule(ModuleBase):
         
         return 0
 
-    def perform_post_check(self):
-        """Perform Power-On Self Test to verify all components are working"""
+    def perform_system_check(self):
+        """Perform a system check before starting the module"""
         self.log_message("Performing system check...")
-    
-    # Check GPIO
+        
+        # Check GPIO
         gpio_ok = self.setup_hardware()
-    if gpio_ok:
+        if gpio_ok:
             self.log_message("✓ GPIO initialized")
-    else:
+        else:
             self.log_message("✗ GPIO initialization failed")
             return False
         
-        # Check sensors
-        sensors_ok = True
-        self.log_message("Testing PIR sensors...")
-        for i in range(len(self.PIR_PINS)):
-            sensor_value = self.read_pir_sensor(i)
-            self.log_message(f"✓ PIR{i+1} reading: {sensor_value}")
-            
-            # Update sensor state
-            self.cubicle_data[f"CUB{i+1}"]["sensor_state"] = "UP"
-        
-        # Check MongoDB connection
+        # Check storage
+        storage_ok = False
         db_status = "Offline"
-        if self.mongo_collection:
+        
+        # Check MongoDB
+        if MONGODB_AVAILABLE:
             try:
-                # Test connection by pinging
-                if self.mongo_client:
-                    self.mongo_client.admin.command('ping')
-                    db_status = "Online"
-                    self.log_message("✓ MongoDB connection active")
+                self.connect_to_mongodb()
+                db_status = "Online"
+                self.log_message("✓ MongoDB connected")
             except Exception as e:
                 self.log_message(f"✗ MongoDB connection error: {e}")
                 db_status = "Offline"
-    else:
+        else:
             self.log_message("✗ MongoDB not configured")
-    
-    # Check local storage
-    try:
+        
+        # Check local storage
+        try:
             os.makedirs(self.DATA_DIR, exist_ok=True)
-            test_file = os.path.join(self.DATA_DIR, "test.tmp")
+            test_file = os.path.join(self.DATA_DIR, "test.txt")
             with open(test_file, "w") as f:
                 f.write("test")
             os.remove(test_file)
             self.log_message("✓ Local storage accessible")
-        storage_ok = True
-    except Exception as e:
+            storage_ok = True
+        except Exception as e:
             self.log_message(f"✗ Local storage error: {e}")
-        storage_ok = False
-    
+            storage_ok = False
+        
         # Overall result
         if gpio_ok and storage_ok:
             self.log_message("System check: PASSED")
-        return True
-    else:
+            return True
+        else:
             if not db_status == "Online" and not storage_ok:
                 self.log_message("ERROR: No storage available. Cannot continue.")
-        return False
+                return False
             self.log_message("System check: PASSED WITH WARNINGS")
             return True
 
@@ -491,25 +482,25 @@ class OccupancyModule(ModuleBase):
         return list(self.log_queue)[-count:]
 
     def run(self):
-        """Main function to monitor cubicle occupancy"""
+        """Main function for occupancy monitoring"""
+        # Initialize hardware
         if not self.setup_hardware():
             self.log_message("Failed to initialize occupancy hardware. Module not started.")
             self.running = False
-        return
-    
+            return
+        
         # Perform system check
-        self.perform_post_check()
+        if not self.perform_system_check():
+            self.log_message("System check failed. Module not started.")
+            self.running = False
+            return
         
-        # Connect to MongoDB first
-        mongodb_connected = self.connect_to_mongodb()
-        if not mongodb_connected:
-            self.log_message("No MongoDB connection. Using local storage only.")
-        
-    # Initialize storage system
+        # Initialize storage
         if not self.initialize_storage():
             self.log_message("Failed to initialize storage system")
-        return
-    
+            self.running = False
+            return
+        
         self.log_message("Detecting the initial state for each cubicle...")
         
         # Initial readings
