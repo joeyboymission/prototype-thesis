@@ -88,3 +88,57 @@ class ModuleBase:
     def run(self):
         # To be implemented by subclasses
         pass 
+
+class OccupancyModule(ModuleBase):
+    def __init__(self):
+        super().__init__("Occupancy")
+        self.cubicles = {
+            "CUB1": {"status": "VACANT", "last_update": time.time()},
+            "CUB2": {"status": "VACANT", "last_update": time.time()},
+            "CUB3": {"status": "VACANT", "last_update": time.time()}
+        }
+        self.mongodb_client = None
+        self.db = None
+        self.collection = None
+        
+        if MONGODB_AVAILABLE:
+            try:
+                self.mongodb_client = MongoClient('mongodb://localhost:27017/')
+                self.db = self.mongodb_client['smart_restroom']
+                self.collection = self.db['occupancy_data']
+            except Exception as e:
+                print(f"Warning: Could not connect to MongoDB: {e}")
+    
+    def get_cubicle_summary(self):
+        """Get summary of all cubicles"""
+        return self.cubicles
+    
+    def run(self):
+        """Main loop for occupancy monitoring"""
+        while self.running and not self.stop_event.is_set():
+            if not self.paused:
+                try:
+                    # Simulate occupancy detection
+                    for cubicle in self.cubicles:
+                        # Randomly change status for simulation
+                        if time.time() - self.cubicles[cubicle]["last_update"] > 30:
+                            self.cubicles[cubicle]["status"] = "OCCUPIED" if self.cubicles[cubicle]["status"] == "VACANT" else "VACANT"
+                            self.cubicles[cubicle]["last_update"] = time.time()
+                            
+                            # Store in MongoDB if available
+                            if self.collection:
+                                try:
+                                    self.collection.insert_one({
+                                        "cubicle": cubicle,
+                                        "status": self.cubicles[cubicle]["status"],
+                                        "timestamp": datetime.now()
+                                    })
+                                except Exception as e:
+                                    print(f"Error storing occupancy data: {e}")
+                    
+                    time.sleep(1)  # Check every second
+                except Exception as e:
+                    print(f"Error in occupancy monitoring: {e}")
+                    time.sleep(5)  # Wait before retrying
+            else:
+                time.sleep(1)  # Sleep while paused 

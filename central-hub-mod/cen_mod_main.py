@@ -433,7 +433,7 @@ class CentralHubModule(ModuleBase):
         while self.running and not self.stop_event.is_set():
             if not self.paused:
                 try:
-                current_time = time.time()
+                    current_time = time.time()
                     
                     # Check module status at regular intervals
                     if current_time - last_check_time >= self.MODULE_CHECK_INTERVAL:

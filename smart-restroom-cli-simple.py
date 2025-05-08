@@ -30,6 +30,7 @@ try:
 except ImportError as e:
     print(f"Warning: Could not import Occupancy Module: {e}")
     OCCUPANCY_MODULE_AVAILABLE = False
+    print("Occupancy module integration skipped - will be handled by main CLI.")
 
 try:
     from odor_mod_main import OdorModule
